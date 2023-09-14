@@ -6,9 +6,7 @@ trap 'last_command=$current_command; current_command=$BASH_COMMAND' DEBUG
 # echo an error message before exiting
 trap 'if [ $? -ne 0 ]; then echo "\"${last_command}\" command failed with exit code $?."; fi;' EXIT;
 
-pip3 install pyzmq && pip install --upgrade pyzmq
-pip3 install psutil
-git clone https://github.com/AliJahan/miniMDock.git && cd miniMDock && ./compile_hip_coe.sh && cd /workspace/profiler/ && python3 /workspace/profiler/local_runner.py &> local_runner.log &
 
-# keeps the container up and running
-tail -F /dev/null 
+cd ../.devcontainer/ && ./build_image.sh && ./run_image.sh 
+
+cd ../profiler && sleep 60 && python remote_runner.py && python plot.py
