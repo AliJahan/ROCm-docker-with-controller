@@ -6,7 +6,14 @@ trap 'last_command=$current_command; current_command=$BASH_COMMAND' DEBUG
 # echo an error message before exiting
 trap 'if [ $? -ne 0 ]; then echo "\"${last_command}\" command failed with exit code $?."; fi;' EXIT;
 
+SETUP_WAIT=180
 
-cd ../.devcontainer/ && ./build_image.sh && ./run_image.sh 
+function wait_file_changed {
+    tail -fn0 "$1" | head -n1
+}
 
-cd ../profiler && sleep 60 && python remote_runner.py && python plot.py
+cd ../.devcontainer/ && ./build_image.sh && ./run_image.sh
+
+printf "Waiting for container to finish setting up local_runner..." > ../profiler/LOG && rm -rf ../profiler/local_runner.log && touch ../profiler/local_runner.log && wait_file_changed ../profiler/local_runner.log # Give container time to set up and start local_runner.py
+
+echo "Done! Running remote_profiler now ... " >> ../profiler/LOG && cd ../profiler && ./build_master.sh && python3 remote_runner.py >> LOG && python3 plot.py

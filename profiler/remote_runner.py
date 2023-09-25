@@ -8,12 +8,15 @@ import datetime
 sys.path.append('/opt/rocm//libexec/rocm_smi/')
 from rsmiBindings import *
 import zmq
+import sys
+
 class GPUController(threading.Thread):
     num_gpus = 0
     lock = threading.Lock()
-    def __init__(self, sampling_interval_msec = 50):
-        threading.Thread.__init__(self)
-        self.initializeRsmi()
+    def __init__(self, sampling_interval_msec = 250):
+        if self.initializeRsmi() is False:
+            print("ROCM SMI can not be initted\n", flush=True)
+            sys.exit(0)
         self.set_powers = dict()
         self.sampling_interval = sampling_interval_msec
         self.queue = multiprocessing.Queue()
@@ -21,6 +24,7 @@ class GPUController(threading.Thread):
         # make sure all gpus power is max
         for dev in range(self.num_gpus):
             self.set_power(dev, 225)
+        threading.Thread.__init__(self)
 
     def driverInitialized(self):
         """ Returns true if amdgpu is found in the list of initialized modules
@@ -81,11 +85,14 @@ class GPUController(threading.Thread):
         else:
             print('Driver not initialized (amdgpu not found in modules)')
             exit(0)
+        return True
 
     def run(self):
+        # Collects GPU power data (per gpu) and calculates the average for the collected data
         with self.lock:
             self.runnig = True
         nb_samples = 1
+        log = ""
         while True:
             with self.lock:
                 if self.runnig == False:
@@ -99,16 +106,20 @@ class GPUController(threading.Thread):
                 self.queue.put((1, power))
             else:
                 prev_powers = self.queue.get()
+                log += str(prev_powers) + "\n"
                 # prev_powers = self.queue.put(prev_powers)
                 # calc. avg.
                 # print(f"{(prev_powers[1] * prev_powers[0] + power) / (prev_powers[0] +1 )} = {prev_powers[1]} * {prev_powers[0]} + {power} / ({prev_powers[0]} +1) ", flush=True)
                 for i in range(self.num_gpus):
-                    power[i] = int((prev_powers[1][i] * prev_powers[0] + power[i]) / (prev_powers[0] +1))
+                    power[i] = int(float(prev_powers[1][i] * prev_powers[0] + power[i]) / float(prev_powers[0] +1))
                 # prev_powers = self.queue.get()
             nb_samples += 1
                 
             self.queue.put((nb_samples, power))
             time.sleep(self.sampling_interval / 1000.0)
+        f = open("power", 'w')
+        f.write(log)
+        f.close()
 
     def stop(self):
         running = False
@@ -118,8 +129,6 @@ class GPUController(threading.Thread):
             with self.lock:
                 self.runnig = False
             self.join()
-        # for dev in range(self.num_gpus):
-        #     self.set_power(dev, 225)
 
     def get_num_gpus(self):
         gpus = 0
@@ -146,8 +155,7 @@ class GPUController(threading.Thread):
             power += self.get_cur_power(i)
         return power
     def get_avg_power(self):
-        # if self.queue.:
-        #     return None
+        # Multiprocess queue communication for getting power data 
         return self.queue.get()[1]
 
     def set_power(self, dev, power):
@@ -163,41 +171,61 @@ class GPUController(threading.Thread):
             self.set_power(dev, 225)
         rocmsmi.rsmi_shut_down()
 
+# master in this context is the binary which actually performs power capping and cu masking through ZMQ
+# master connects to controller process in docker (through) ZMQ and asks for cu masking or power cap
 MASTER_PATH="/home/ajaha004/repos/rocr/standalone-docker/ROCm-docker-with-controller/profiler/build/bin/master"
-EXPR_DURATION_SEC=140
+
+# During this time, the benchmark is running and power metrics are collected
+EXPR_DURATION_SEC=120 
+
+# During this time, the local_runner has started the process already by "start command", 
+#    we wait a bit before power stat collection to get more stable results 
+#    in other words, pausing power collection during benchmark setup and warmup.
+START_WAIT=30 
+
 class ProfilerController:
     def __init__(self, port: str = "5951"):
+        # setup ZMQ for communication
         context = zmq.Context()
         self.sock_ = context.socket(zmq.DEALER)
         try:
-            self.sock_.bind("tcp://*:"+port)
+            self.sock_.connect("tcp://localhost:"+port)
         except:
             print(f"Could not bind to tcp://*:{port}")
         # threading.Thread.__init__(self)
     def now_str(self):
+        # returns current time as str
         return datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
     def profile(self):
+        # Profiling space
         cus = [i for i in range(60, 0, -2)]
-        powers = [i for i in range(225, 0, -25)]
-        dur = 2.5*len(powers)*len(cus)/60
+        powers = [i for i in range(225, 0, -5)]
+        # Some experiment info: for example, duration in hours
+        dur = ((EXPR_DURATION_SEC + START_WAIT) / 60) * len(powers) * len(cus) / 60
         print(f"Total experiments: {len(cus)*len(powers)} ~Duration: {dur} hrs", flush=True)
+        # csv log header
         log = "expr_ind,set_cu,set_power,avg_power,avg_tp"
         expr_ind = 1
+        # Make sure the local runner is ready, we wait here for a response from local_runner before starting profiling
+        self.sock_.send_string("READY")
+        rep = self.sock_.recv_string()
+        if "fail" in rep:
+            print("Could not connect to local_runner, stopped")
+            return
+        # Profiling
         for power in powers:
             for cu in cus:
-                print(f"{expr_ind}: starting experiment for: cu({cu}) power({power})", flush=True)
+                print(f"@{self.now_str()}:{expr_ind}: starting experiment for: cu({cu}) power({power})", flush=True)
                 # setup cu mask and power communicate with controller service
                 set_cu_cmd = (MASTER_PATH + " cu " + str(cu)).split(" ")
                 set_power_cmd = (MASTER_PATH + " power " + str(power)).split(" ")
-                # print(f"{set_cu_cmd}", flush=True)
-                # print(f"{set_power_cmd}", flush=True)
                 cu_set_p = subprocess.Popen(
                     set_cu_cmd,
                     stdout=subprocess.PIPE,
                     stdin=subprocess.PIPE,
                     stderr=subprocess.PIPE
                 )
-                time.sleep(1)
+                time.sleep(1) 
                 power_set_p = subprocess.Popen(
                     set_power_cmd,
                     stdout=subprocess.PIPE,
@@ -209,30 +237,35 @@ class ProfilerController:
                 power_set_p.communicate()
                 print(f"\t- cu and power set", flush=True)
                 print(f"\t- starting benchmark remotely", flush=True)
-                # run benchmark by zmq communication with local_runner.py
+                # REMOTELY start benchmark (communicate with local_runner through ZMQ)
                 self.sock_.send_string("START")
-                gpu_reader = GPUController()
                 rep = self.sock_.recv_string()
-                print(f"\t- remote rep1 {rep}", flush=True)
-                # rep = self.sock_.recv_string()
-                # print(f"\t- remote rep2 {rep}", flush=True)
+                print(f"\t- remote reply {rep}", flush=True)
                 if "fail" in rep:
                     print("Experiment with power: {power} cu: {cu} failed")
-                print(f"\t- waiting for 60 sec", flush=True)
-                time.sleep(5)
+                    return 
+                print(f"\t- waiting for {START_WAIT} sec", flush=True)
+                # Wait for started benchmark initialization/warmup
+                time.sleep(START_WAIT)
+                # Start power stat collection 
+                print(f"\t- started power monitor, collecting power data for {EXPR_DURATION_SEC} sec", flush=True)
+                gpu_reader = GPUController()
                 gpu_reader.start()
+                # Wait
                 time.sleep(EXPR_DURATION_SEC)
                 gpu_reader.stop()
                 recorder = gpu_reader.get_avg_power()
+                del gpu_reader
                 print(f"\t- stopping benchmark remotely", flush=True)
-
+                # STOP remote benchmark
                 self.sock_.send_string("STOP")
-                rep = self.sock_.recv_string()
+                avg_tp = self.sock_.recv_string()
+                if "fail" in avg_tp:
+                    print(f"Experiment with power: {power} cu: {cu} failed with error {avg_tp}")
+                    return
                 print(f"\t- remote stopped BE", flush=True)
-                avg_tp = self.get_avg_tp(rep)
-                # rep = self.sock_.recv_string()
-                # print(f"\t- remote rep1 {rep}", flush=True)
-
+                # collect stats and save them to file
+                print(f"\t- gpus power {recorder}", flush=True)
                 new_log_entry = f"@{self.now_str()}: expr_ind: {expr_ind} cu:{cu} power: {power} power: {recorder[0]} avg_tp: {avg_tp}"
                 new_rep = f"{expr_ind},{cu},{power},{recorder[0]},{avg_tp}\n"
                 log += new_rep
@@ -242,18 +275,7 @@ class ProfilerController:
                 f.write(new_rep)
                 f.close()
 
-    def get_avg_tp(self, rep):
-        reps = rep.split("\n")
-        latencies = list()
-        for i in reps:
-            if len(str(i)) > 3:
-                latencies.append(int(i))
-        sum_ = 0
-        num_ = 0
-        for l in latencies:
-            sum_ += l
-            num_ += 1
-        return int(float(sum_) / float(num_))
+    
 if __name__ == "__main__":
     profiler = ProfilerController()
     profiler.profile()
