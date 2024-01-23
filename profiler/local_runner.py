@@ -144,7 +144,7 @@ class Profiler:
         print(f"Profiler Running...", flush=True)
         running = False
         # Warmup for donwloading datasets
-        tmp = BERunner(BATCH_CMD+"2", 0, True)
+        tmp = BERunner(BATCH_CMD+"2", -1, True)
         tmp.start()
         time.sleep(30)
         res = tmp.stop(0)

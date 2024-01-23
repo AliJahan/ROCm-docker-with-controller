@@ -1,5 +1,6 @@
 #include <zmq.h>
 #include <zmq_addon.hpp>
+#include <iostream>
 
 namespace Control
 {
@@ -54,12 +55,13 @@ namespace Control
 
 int main(int argc, char *argv[]){
     
-    if(argc < 2){
+    if(argc < 3){
         return 1;
     }
     std::string cmd(argv[1]);
     
-    uint32_t cap = std::stoi(argv[2]);
+    uint32_t cap = std::stoi(argv[3]);
+    uint32_t gpu = std::stoi(argv[2]);
     zmq::context_t ctx_(1);
     zmq::socket_t* socket_ptr_;
     socket_ptr_ = new zmq::socket_t(ctx_, zmq::socket_type::dealer);
@@ -79,15 +81,16 @@ int main(int argc, char *argv[]){
     if(cmd == "power"){
         msg_cmd.command_type = Control::command_t::SET_FREQ;
     }
-    msg_cmd.gpu_ind = 0U;
+    msg_cmd.gpu_ind = gpu;
     msg_cmd.value=cap;
-
+    std::cout << "cmd: " << cmd << " gpu: " << gpu << " val: " << cap << std::endl;
+    std::cout << "sending..." << std::flush;
     zmq::message_t msg_s(&msg_cmd, sizeof(msg_cmd));
     socket_ptr_->send(msg_s, zmq::send_flags::dontwait);
+    std::cout << "done!\n";
     zmq::message_t msg_r;
     socket_ptr_->recv(msg_r);
     std::string reply(msg_r.data<char>(), msg_r.size());
-
     socket_ptr_->disconnect("tcp://localhost:9090");
     delete socket_ptr_;
     socket_ptr_ = nullptr;

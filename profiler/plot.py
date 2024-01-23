@@ -307,12 +307,14 @@ def draw_path(
     ax,
     powers, 
     cus, 
-    pes
+    pes,
+    min_cu,
+    min_power
 ):
     # Hand picked values for now TODO
     x = [175, 150, 125, 100, 75, 50]
     y = [56, 56, 56, 56, 56, 56]
-    z = [ pes[x[i]//25, y[i]//2] for i in range(len(x))]
+    z = [ pes[x[i] // int(min_power), y[i]//int(min_cu)] for i in range(len(x))]
     # Power cap Line
     ax.plot(
         x,
@@ -325,7 +327,7 @@ def draw_path(
     )
     x = [50, 50, 50, 50, 50, 50, 50, 50]
     y = [56, 50, 44, 40, 34, 30, 24, 20]
-    z = [ pes[x[i] // 25, y[i] // 2] for i in range(len(x))]
+    z = [ pes[x[i] // int(min_power), y[i] // int(min_cu)] for i in range(len(x))]
     # CU Line
     ax.plot(
         x,
@@ -374,7 +376,7 @@ def plot_pe(
 
     ax.set_proj_type('ortho')
     # Add path to the PE plot
-    draw_path(ax, powers, cus, pes)
+    draw_path(ax, powers, cus, pes, min_cu, min_power)
     
     # Axis limits
     ax.set_xlim(max_power, min_power)
