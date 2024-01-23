@@ -1,0 +1,48 @@
+FROM rubuntu:latest
+LABEL maintainer=ajaha004@ucr.edu
+
+ARG REMOTE_CONTROLLER_BRANCH=rocm-5.7.1
+ARG CONTROL_PORT="9090"
+ARG BUILD_MODE="Debug"
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y software-properties-common git pkg-config xxd libzmq3-dev iproute2
+
+# most up-to-date cmake 
+RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null
+RUN apt-add-repository 'deb https://apt.kitware.com/ubuntu/ focal main'
+RUN apt-get update && apt-get install -y cmake 
+
+RUN echo "Building ROCR with CUMasking through SHM" \
+  && cd /tmp \
+  && git clone https://github.com/AliJahan/ROCR-Runtime.git \
+  && cd ROCR-Runtime \
+  && git checkout rocm-5.7.1 \
+  && bash ./build_install.sh \
+  && cd /tmp \
+  && rm -rf ROCR-Runtime;
+
+ENV ROCM_PATH=/opt/rocm/
+
+COPY ../controller /tmp/controller
+
+RUN cd /tmp/controller \
+  && rm -rf build && mkdir build \
+  && cd build \
+  && cmake -DCMAKE_BUILD_TYPE="${BUILD_MODE}" -DCONTROL_PORT="${CONTROL_PORT}" .. \
+  && make -j \
+  && cd ../scripts/ \
+  && bash setup_service.sh; 
+
+RUN cd /tmp/controller \
+  && rm -rf build && mkdir build \
+  && cd build \
+  && cmake -DCMAKE_BUILD_TYPE="${BUILD_MODE}" -DCONTROL_PORT="${CONTROL_PORT}" .. \
+  && make -j \
+  && cd ../scripts/ \
+  && bash setup_service.sh; 
+
+EXPOSE "${CONTROL_PORT}"
+
+# Start controller service () then keep container running for debug porposes
+ENTRYPOINT printf "Controller address: " && ip r | head -n 1 | awk '{printf $3}' && printf ":9090\n" && /tmp/controller/scripts/start_service.sh && /tmp/controller/scripts/debug_wait.sh

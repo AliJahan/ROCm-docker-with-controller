@@ -39,7 +39,8 @@ namespace Control{
         return os << "Control Message{"
                 << "cmd:"             << m.command_type   << " "
                 << "GPU:"             << m.gpu_ind        << " "
-                << "Value:"           << m.value          << " }";
+                << "Value1:"          << m.value1         << " "
+                << "Value2:"          << m.value2         << " }";
     }
     // initializes the controller (order important)
     bool Controller::init_controller(){
@@ -100,7 +101,7 @@ namespace Control{
             assert(shm_ != nullptr && "FATAL: shm is initialized but shm_ pointer is null\n");
             return true;
         }
-        shm_ = cumasking_shm_init(num_gpus_);
+        shm_ = cumasking_shm_init(true, num_gpus_);
         if(shm_ == nullptr){
             std::cout << "Controller failed to init SHM\n" << std::flush;
             return false;
@@ -300,16 +301,16 @@ namespace Control{
         std::cout << get_cur_time_str() << " <CMD_RECVD> " << control_msg_ptr << std::endl << std::flush;
         switch (control_msg_ptr->command_type) {
             case Control::Controller::command_t::SET_FREQ :
-                set_freq(control_msg_ptr->gpu_ind, control_msg_ptr->value);
+                set_freq(control_msg_ptr->gpu_ind, control_msg_ptr->value1);
                 break;
             case Control::Controller::command_t::RESET_FREQ :
                 set_freq(control_msg_ptr->gpu_ind, 225U);
                 break;
             case Control::Controller::command_t::SET_CUMASK :
-                set_cus(control_msg_ptr->gpu_ind, control_msg_ptr->value);
+                set_cus(control_msg_ptr->gpu_ind, control_msg_ptr->value1, control_msg_ptr->value2);
                 break;
             case Control::Controller::command_t::RESET_CUMASK :
-                set_cus(control_msg_ptr->gpu_ind, 60U);
+                set_cus(control_msg_ptr->gpu_ind, 0xffffffff, 0xfffffff);
                 break;
             default:
                 break;
@@ -328,13 +329,30 @@ namespace Control{
         strftime(buf, sizeof(buf), "%Y-%m-%d %X", &tstruct);
         return std::string(buf);
     }
-    
+    inline uint32_t Controller::count_set_bits(uint32_t n){
+        uint32_t count = 0;
+        while (n) {
+            n &= (n - 1);
+            count++;
+        }
+        return count;
+    }
+    std::string Controller::uint2hexstr(uint32_t num){
+        std::ostringstream ss;
+        ss << std::hex << num;
+        std::string result = ss.str();
+        return result;
+    }
     // Communicate with ROCR through SHM to set cu_mask
-    void Controller::set_cus(uint32_t gpu_ind, uint32_t num_cus){
+    void Controller::set_cus(uint32_t gpu_ind, const uint32_t mask0, const uint32_t mask1){
+        uint32_t num_cus = count_set_bits(mask0) + count_set_bits(mask1);
         #if DEBUG_MODE
-            PRINT(get_cur_time_str()+" @Controller::set_cus", "set_cus: gpu("+std::to_string(gpu_ind)+") cus("+std::to_string(num_cus)+")");
+            PRINT(get_cur_time_str()+" @Controller::set_cus", "set_cus: gpu("+std::to_string(gpu_ind)+") cus("+std::to_string(num_cus)+")"+ " masks("+uint2hexstr(mask0)+","+uint2hexstr(mask1)+")");
         #endif
         if(num_cus < 0U || num_cus > 60U){
+            #if DEBUG_MODE
+            PRINT(get_cur_time_str()+" @Controller::set_cus", "invalid mask:" + std::to_string(num_cus));
+            #endif
             return;
         }
         
@@ -344,7 +362,8 @@ namespace Control{
         
 
         pthread_mutex_lock(shm_->mutex_ptr);
-        *(shm_->gpus_num_cu_ptr + gpu_ind) = num_cus;
+        *(shm_->gpus_cu_mask_ptr + 2 * gpu_ind) = mask0;
+        *(shm_->gpus_cu_mask_ptr + 2 * gpu_ind + 1) = mask1;
         pthread_mutex_unlock(shm_->mutex_ptr);
         #if DEBUG_MODE
             PRINT(get_cur_time_str()+" @Controller::set_cus", "setting cus DONE");

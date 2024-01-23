@@ -1,0 +1,74 @@
+version: "3.8"
+
+services:
+  rocm-ubuntu: # rocm-ubuntu: rocm-5.7.1 installed
+    image: rubuntu:latest
+    build:
+      context: ..
+      dockerfile: ./.devcontainer/Dockerfile.rocm5.7.1-ubuntu
+    stdin_open: true
+    tty: true
+    volumes:
+      - ../:/workspace
+    devices:
+      - "/dev/kfd:/dev/dri"
+    privileged: true
+    working_dir: /workspace
+    command: /bin/bash
+    profiles: ["amd"]
+  remote-rocr-ubuntu: # rocm-ubuntu: rocm-5.7.1 installed
+    image: rrbuntu:latest
+    build:
+      context: ..
+      dockerfile: ./.devcontainer/Dockerfile.remote-rocr5.7.1-ubuntu
+    stdin_open: true
+    tty: true
+    volumes:
+      - ../:/workspace
+    devices:
+      - "/dev/kfd:/dev/dri"
+    privileged: true
+    working_dir: /workspace
+    command: /bin/bash
+    profiles: ["amd"]
+    # ports:
+    #   - "9090:9090"
+    network_mode: "host"
+
+  torch-rocm-ubuntu: # rocm-ubuntu: rocm-5.7.1 installed
+    image: tubuntu:latest
+    build:
+      context: ..
+      dockerfile: ./.devcontainer/Dockerfile.torch2.1.1-rocm5.7.1-ubuntu
+    stdin_open: true
+    tty: true
+    volumes:
+      - ../:/workspace
+    devices:
+      - "/dev/kfd:/dev/dri"
+    privileged: true
+    working_dir: /workspace
+    command: /bin/bash
+    profiles: ["amd"]
+    # ports:
+    #   - "9090:9090"
+    network_mode: "host"
+  tvm-rocm-ubuntu: # rocm-ubuntu: rocm-5.7.1 installed (Contains llama 2 infrence)
+    image: tvmubuntu:latest
+    build:
+      context: ..
+      dockerfile: ./.devcontainer/Dockerfile.mlc-llm-ubuntu
+    stdin_open: true
+    tty: true
+    volumes:
+      - ../:/workspace
+      - ../dist:/mlc-llm/dist
+    devices:
+      - "/dev/kfd:/dev/dri"
+    privileged: true
+    working_dir: /workspace
+    command: /bin/bash
+    profiles: ["amd"]
+    # ports:
+    #   - "9090:9090"
+    network_mode: "host"

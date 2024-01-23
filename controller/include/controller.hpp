@@ -25,32 +25,39 @@ public:
     struct control_msg_t{
         command_t command_type;
         uint32_t gpu_ind;
-        int32_t value; 
+        // 2 values for cumask
+        uint32_t value1; 
+        uint32_t value2; 
         control_msg_t(): 
             command_type(command_t::NOOP),
             gpu_ind(0U),
-            value(-1) {}
+            value1(0xffffffff),
+            value2(0xfffffff) {} // default cu mask (max cus)
 
         control_msg_t(
             const command_t& command,
             uint32_t gpu_ind,
-            int32_t value
+            uint32_t value1,
+            uint32_t value2
         ):
             command_type(command),
             gpu_ind(gpu_ind),
-            value(value) {}
+            value1(value1),
+            value2(value2) {}
         
         // copy const.
         control_msg_t(const struct control_msg_t& other):
             command_type(other.command_type),
             gpu_ind(other.gpu_ind),
-            value(other.value) {}
+            value1(other.value1),
+            value2(other.value2) {}
 
         // assign opt.
         control_msg_t& operator=(const struct control_msg_t& other){
             command_type = other.command_type;
             gpu_ind = other.gpu_ind;
-            value = other.value;
+            value1 = other.value1;
+            value2 = other.value2;
             return *this;
         }
     };
@@ -63,7 +70,7 @@ public:
         ctx_(1),
         socket_ptr_(nullptr),
         control_socket_address_(
-            "tcp://*:"+port_str
+            "tcp://0.0.0.0:"+port_str
         ),
         smi_initted_(false),
         num_gpus_(0U),
@@ -78,7 +85,7 @@ public:
     void stop();
 private:
     void run();
-    void set_cus(uint32_t gpu_ind, uint32_t num_cus);
+    void set_cus(uint32_t gpu_ind, const uint32_t mask0, const uint32_t mask1);
     void set_freq(uint32_t gpu_ind, uint32_t freq);
     bool init_rocm_smi();
     void deinit_rocm_smi();
@@ -88,6 +95,8 @@ private:
     void deinit_shm();
     bool init_zmq();
     void deinit_zmq();
+    inline uint32_t count_set_bits(uint32_t n); // utility
+    std::string uint2hexstr(uint32_t num); //utility
     zmq::message_t get_command();
     void apply_command(zmq::message_t& msg);
     Controller() {}; // no default ctor.

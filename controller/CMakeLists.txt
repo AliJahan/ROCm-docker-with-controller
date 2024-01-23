@@ -30,11 +30,8 @@ target_link_libraries(controller PUBLIC -lrt pthread zmq ${ROCM_SMI_LIB_DIR}/lib
 set_target_properties(controller PROPERTIES RUNTIME_OUTPUT_DIRECTORY "/usr/local/bin/")
 # for local test uncomment lines #30 and uncomment below lines
 # installs controller binary in build dir
-# set_target_properties(controller PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+#set_target_properties(controller PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 # compiles master (communication with controller outside container) and installs it binary in build dir
-# add_executable(master src/master.cpp)
-# target_link_libraries(master PUBLIC -lrt pthread zmq)
-
-
-
-# set_target_properties(master PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+add_executable(master src/master.cpp)
+target_link_libraries(master PUBLIC -lrt pthread zmq)
+set_target_properties(master PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

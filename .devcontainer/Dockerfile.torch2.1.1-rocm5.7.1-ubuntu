@@ -1,0 +1,26 @@
+FROM rrbuntu:latest
+LABEL maintainer=ajaha004@ucr.edu
+
+ARG PYTORCH_TAG=v2.2.1
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN wget https://repo.anaconda.com/archive/Anaconda3-2023.09-0-Linux-x86_64.sh \
+	&& bash Anaconda3-2023.09-0-Linux-x86_64.sh -b 
+
+ENV PATH /root/anaconda3/envs/torch/bin/:/root/anaconda3/bin:root/anaconda3/condabin:$PATH
+# RUN conda create -n torch python=3.8 cmake ninja mkl mkl-include -y 
+RUN conda create -n torch python=3.8 ninja mkl mkl-include -y 
+
+RUN echo "Building/Installing Torch..."\
+  # && conda activate torch \
+  && cd /tmp \
+  && git clone --recursive --jobs `nproc` https://github.com/pytorch/pytorch.git\
+  && cd pytorch \
+  && git checkout v2.1.1 \
+  && git submodule update --init --recursive \
+  && pip install -r requirements.txt \
+  && python3 tools/amd_build/build_amd.py \
+  && export CMAKE_PREFIX_PATH=/root/anaconda3/envs/torch/ \
+  && _GLIBCXX_USE_CXX11_ABI=1 HIP_ROOT_DIR=/opt/rocm/hip/ REL_WITH_DEB_INFO=1 MAX_JOBS=60 USE_CUDA=0 USE_NUMPY=1 PYTORCH_ROCM_ARCH="gfx906" MIOPEN_LIBRARY=/opt/rocm/miopen MIOPEN_LIB_DIR=/opt/rocm/miopen/lib MIOPEN_INCLUDE_DIR=/opt/rocm/miopen/include USE_CUDA=0 USE_ROCM=1 ROCM_HOME=/opt/rocm python3 setup.py install develop \
+  && cd .. && rm -rf pytorch

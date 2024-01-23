@@ -37,8 +37,8 @@ namespace Control{
         *   Then each ROCR aql_queue attaches to SHM with a thread monitoring the number of CUs for their assigned GPU and changing the CUMASK for the queue on demand.  
         * */
         uint32_t* num_gpus_ptr;     // One uint32_t to store number of gpus (set by create=true, num_gpus=X)
-        uint32_t* gpus_num_cu_ptr;  // Number of elemenets here is based on X value (line above) passed to cumasking_shm_init which is called by Controller
-        pthread_mutex_t *mutex_ptr;       // Pointer to the pthread mutex for IPC between threads accessing SHM
+        uint32_t* gpus_cu_mask_ptr;  // CU maksed passed to cumasking_shm_init which is called by Controller (2 uin32_t per GPU)
+        pthread_mutex_t *mutex_ptr; // Pointer to the pthread mutex for IPC between threads accessing SHM
 
         // Non-shared members (local to each process/thread)
         int shm_fd;           // Descriptor of shared memory object.
@@ -55,7 +55,7 @@ namespace Control{
     
         CUMaskingSharedMemory():
             num_gpus_ptr(nullptr),
-            gpus_num_cu_ptr(nullptr),
+            gpus_cu_mask_ptr(nullptr),
             mutex_ptr(nullptr),
             shm_fd(-1),
             name(nullptr),
@@ -64,12 +64,11 @@ namespace Control{
             shm_size(0U){}
 
         // read from SHM API
-        uint32_t read_cus_from_shm(uint32_t offset){
-            uint32_t data;
+        void read_cus_from_shm(uint32_t gpu_offset, uint32_t& mask0, uint32_t& mask1){
             pthread_mutex_lock(mutex_ptr); // start critical region
-            data = *(gpus_num_cu_ptr + offset);
+            mask0 = *(gpus_cu_mask_ptr + 2 * gpu_offset);
+            mask0 = *(gpus_cu_mask_ptr + 2 * gpu_offset + 1);
             pthread_mutex_unlock(mutex_ptr); // end critical region
-            return data;
         }
         
         uint32_t read_gpus_from_shm(){
@@ -98,7 +97,22 @@ namespace Control{
     // There is no workaround currently, except to run first
     // initialization only before multi-threaded or multi-process
     // functionality.
-    CUMaskingSharedMemory* cumasking_shm_init(uint32_t num_gpus = 1U);
+    CUMaskingSharedMemory* cumasking_shm_init(bool create = false, uint32_t num_gpus = 0U);
+    // Close access to the cumasking share memory and free all the resources,
+    // used by the structure.
+    //
+    // Returns 0 in case of success. If any error occurs, it will be
+    // printed into the standard output and the function will return -1.
+    // `errno` wil not be reset in such case, so you may used it.
+    //
+    // **NOTE:** It will not destroy the mutex. The mutex would not
+    // only be available to other processes using it right now,
+    // but also to any process which might want to use it later on.
+    // For complete desctruction use `cumasking_shm_destroy` instead.
+    //
+    // **NOTE:** It will not unlock locked mutex.
+    int cumasking_shm_close(CUMaskingSharedMemory*& mutex);
+
     // Close and destroy cumasking share memory.
     // Any open pointers to it will be invalidated.
     //

@@ -1,0 +1,24 @@
+FROM ubuntu:20.04
+LABEL maintainer=ajaha004@ucr.edu
+
+ARG ROCM_VERSION=5.7.1
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y apt-utils 
+
+# Prepare apt-get repos for rocm
+## linux-headers needed by rocm (source: https://rocm.docs.amd.com/en/latest/deploy/linux/prerequisites.html)
+RUN apt-get install -y wget gpg "linux-headers-$(uname -r)" "linux-modules-extra-$(uname -r)"
+
+## public keys for rocm
+RUN mkdir --parents --mode=0755 /etc/apt/keyrings
+RUN wget https://repo.radeon.com/rocm/rocm.gpg.key -O - | gpg --dearmor | tee /etc/apt/keyrings/rocm.gpg > /dev/null
+
+## setup apt repo for the ROCM_VERSION
+RUN echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/amdgpu/$ROCM_VERSION/ubuntu focal main" > /etc/apt/sources.list.d/amdgpu.list
+RUN echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/rocm.gpg] https://repo.radeon.com/rocm/apt/$ROCM_VERSION focal main" > /etc/apt/sources.list.d/rocm.list
+
+# Install amdgpu-install script
+RUN apt-get update && apt-get -y -o Dpkg::Options::=--force-confnew install amdgpu-install
+# Install rocm without the driver (dkms)
+RUN amdgpu-install -y --usecase=rocm --no-dkms
