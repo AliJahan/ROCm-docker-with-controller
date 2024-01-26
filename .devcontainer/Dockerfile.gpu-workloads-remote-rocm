@@ -1,0 +1,25 @@
+FROM tvm-remote-rocm-ubuntu:latest
+LABEL maintainer=ajaha004@ucr.edu
+
+ARG REMOTE_CONTROLLER_BRANCH=rocm-5.7.1
+ARG CONTROL_PORT="9090"
+ARG BUILD_MODE="Debug"
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y environment-modules
+
+COPY ../scripts/power_broadcaster/ /power_broadcaster/
+
+RUN cd /workloads/Inference-server/ \
+  && rm -rf build && mkdir build \
+  && cd build \
+  && cmake -DCMAKE_PREFIX_PATH=/opt/pytorch/torch .. \
+  && make -j
+
+RUN cd /workloads/miniMDock/ \
+  && rm -rf bin && mkdir bin \
+  && . /etc/profile.d/modules.sh \ 
+  && ./compile_hip_coe.sh
+
+# Start controller service () then keep container running for debug porposes
+ENTRYPOINT printf "Controller address: " && ip r | head -n 1 | awk '{printf $3}' && printf ":9090\n" && /tmp/controller/scripts/start_service.sh && /tmp/controller/scripts/debug_wait.sh

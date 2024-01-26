@@ -1,5 +1,4 @@
-# FROM tubuntu:latest
-FROM rrbuntu:latest 
+FROM remote-rocr-ubuntu:latest 
 LABEL maintainer=ajaha004@ucr.edu
 
 ARG TVM_UNITY_TAG=v0.12.dev0
@@ -18,21 +17,19 @@ RUN echo "Installing vulkan sdk" \
     && wget -qO /etc/apt/sources.list.d/lunarg-vulkan-1.3.268-focal.list https://packages.lunarg.com/vulkan/1.3.268/lunarg-vulkan-1.3.268-focal.list \
     && apt-get update && apt-get install -y vulkan-sdk
 
-# RUN echo "Building/Installing Torch..." \
-#   && pip install ninja mkl mkl-include \
-#   && cd /opt \
-#   && git clone --recursive --jobs `nproc` https://github.com/pytorch/pytorch.git \
-#   && cd pytorch \
-#   && git checkout v2.1.1 \
-#   && git submodule update --init --recursive --jobs `nproc` \
-#   && pip install -r requirements.txt \
-#   && python3 tools/amd_build/build_amd.py \
-#   && _GLIBCXX_USE_CXX11_ABI=1 HIP_ROOT_DIR=/opt/rocm/hip/ REL_WITH_DEB_INFO=1 MAX_JOBS=60 USE_CUDA=0 USE_NUMPY=1 PYTORCH_ROCM_ARCH="gfx906" MIOPEN_LIBRARY=/opt/rocm/miopen MIOPEN_LIB_DIR=/opt/rocm/miopen/lib MIOPEN_INCLUDE_DIR=/opt/rocm/miopen/include USE_CUDA=0 USE_ROCM=1 ROCM_HOME=/opt/rocm python3 setup.py -q install develop \
-#   && python3 -c "import torch;" \
-#   && rm -rf /opt/pytorch
+RUN echo "Building/Installing Torch..." \
+  && pip install ninja mkl mkl-include \
+  && cd /opt \
+  && git clone --recursive --jobs `nproc` https://github.com/pytorch/pytorch.git \
+  && cd pytorch \
+  && git checkout v2.1.1 \
+  && git submodule update --init --recursive --jobs `nproc` \
+  && pip install -r requirements.txt \
+  && python3 tools/amd_build/build_amd.py \
+  && _GLIBCXX_USE_CXX11_ABI=1 HIP_ROOT_DIR=/opt/rocm/hip/ REL_WITH_DEB_INFO=1 MAX_JOBS=60 USE_CUDA=0 USE_NUMPY=1 PYTORCH_ROCM_ARCH="gfx906" MIOPEN_LIBRARY=/opt/rocm/miopen MIOPEN_LIB_DIR=/opt/rocm/miopen/lib MIOPEN_INCLUDE_DIR=/opt/rocm/miopen/include USE_CUDA=0 USE_ROCM=1 ROCM_HOME=/opt/rocm python3 setup.py -q install develop \
+  && python3 -c "import torch;"
 
 ENV Torch_DIR=/opt/pytorch
-#   && export CMAKE_PREFIX_PATH=/root/anaconda3/envs/torch/ \
 # Build tvm-unity from https://llm.mlc.ai/docs/install/tvm.html#option-2-build-from-source
 RUN echo "Building TVM-Unity from source..." \
     && git clone --recursive --jobs `nproc` https://github.com/mlc-ai/relax.git tvm-unity && cd tvm-unity \

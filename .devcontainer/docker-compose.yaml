@@ -1,11 +1,11 @@
 version: "3.8"
 
 services:
-  rocm-ubuntu: # rocm-ubuntu: rocm-5.7.1 installed
-    image: rubuntu:latest
+  rocm-ubuntu: # rocm-ubuntu: rocm-5.7.1 installed on ubuntu 20.04
+    image: rocm5.7.1-ubuntu20.04:latest
     build:
       context: ..
-      dockerfile: ./.devcontainer/Dockerfile.rocm5.7.1-ubuntu
+      dockerfile: ./.devcontainer/Dockerfile.rocm5.7.1-ubuntu20.04
     stdin_open: true
     tty: true
     volumes:
@@ -16,11 +16,11 @@ services:
     working_dir: /workspace
     command: /bin/bash
     profiles: ["amd"]
-  remote-rocr-ubuntu: # rocm-ubuntu: rocm-5.7.1 installed
-    image: rrbuntu:latest
+  remote-rocm-ubuntu: # ROCR-Runtime modified to control cumasking remotely
+    image: remote-rocr-ubuntu:latest
     build:
       context: ..
-      dockerfile: ./.devcontainer/Dockerfile.remote-rocr5.7.1-ubuntu
+      dockerfile: ./.devcontainer/Dockerfile.remote-rocm-ubuntu
     stdin_open: true
     tty: true
     volumes:
@@ -35,29 +35,29 @@ services:
     #   - "9090:9090"
     network_mode: "host"
 
-  torch-rocm-ubuntu: # rocm-ubuntu: rocm-5.7.1 installed
-    image: tubuntu:latest
+  # torch-rmote-rocm-ubuntu: # rocm-ubuntu: rocm-5.7.1 installed
+  #   image: torch2.1-remote-rocm-ubuntu:latest
+  #   build:
+  #     context: ..
+  #     dockerfile: ./.devcontainer/Dockerfile.torch2.1.1-rocm5.7.1-ubuntu
+  #   stdin_open: true
+  #   tty: true
+  #   volumes:
+  #     - ../:/workspace
+  #   devices:
+  #     - "/dev/kfd:/dev/dri"
+  #   privileged: true
+  #   working_dir: /workspace
+  #   command: /bin/bash
+  #   profiles: ["amd"]
+  #   # ports:
+  #   #   - "9090:9090"
+  #   network_mode: "host"
+  tvm-remote-rocm-ubuntu: # tvm-unity and pytorch 2.1 installed on remotely controllable (cumasking) rocm
+    image: tvm-remote-rocm-ubuntu:latest
     build:
       context: ..
-      dockerfile: ./.devcontainer/Dockerfile.torch2.1.1-rocm5.7.1-ubuntu
-    stdin_open: true
-    tty: true
-    volumes:
-      - ../:/workspace
-    devices:
-      - "/dev/kfd:/dev/dri"
-    privileged: true
-    working_dir: /workspace
-    command: /bin/bash
-    profiles: ["amd"]
-    # ports:
-    #   - "9090:9090"
-    network_mode: "host"
-  tvm-rocm-ubuntu: # rocm-ubuntu: rocm-5.7.1 installed (Contains llama 2 infrence)
-    image: tvmubuntu:latest
-    build:
-      context: ..
-      dockerfile: ./.devcontainer/Dockerfile.mlc-llm-ubuntu
+      dockerfile: ./.devcontainer/Dockerfile.tvm-torch-remote-rocm
     stdin_open: true
     tty: true
     volumes:
@@ -71,4 +71,38 @@ services:
     profiles: ["amd"]
     # ports:
     #   - "9090:9090"
+    network_mode: "host"
+  gpu-workloads-remote-rocm: # contains gpu workloads on remotely controllable rocm
+    image: gpu-workloads-remote-rocm-ubuntu:latest
+    build:
+      context: ..
+      dockerfile: ./.devcontainer/Dockerfile.gpu-workloads-remote-rocm
+    stdin_open: true
+    tty: true
+    volumes:
+      - ../:/workspace
+    devices:
+      - "/dev/kfd:/dev/dri"
+    privileged: true
+    working_dir: /workspace
+    command: /bin/bash
+    profiles: ["amd"]
+    # ports:
+    #   - "9090:9090"
+    network_mode: "host"
+  power-broadcaster: 
+    image: power-broadcaster-rocm:latest
+    build:
+      context: ..
+      dockerfile: ./.devcontainer/Dockerfile.power-broadcaster
+    stdin_open: true
+    tty: true
+    volumes:
+      - ../:/workspace
+    devices:
+      - "/dev/kfd:/dev/dri"
+    privileged: true
+    working_dir: /workspace
+    command: /bin/bash
+    profiles: ["amd"]
     network_mode: "host"
