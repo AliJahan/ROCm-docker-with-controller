@@ -4,10 +4,8 @@ import subprocess
 import multiprocessing
 import time
 import datetime 
-# import rocm-smi lib
 sys.path.append('/opt/rocm/libexec/rocm_smi/')
 from rsmiBindings import *
-import zmq
 import sys
 
 class GPUPowerMonitor(threading.Thread):
@@ -100,7 +98,7 @@ class GPUPowerMonitor(threading.Thread):
                     break
             power = dict()
             for i in range(self.num_gpus):
-                power[i] = int(self.get_cur_power(i))
+                power[str(i)] = int(self.get_cur_power(i))
             # calc. avg. and update    
             if self.queue.empty(): # no avg for the first sample
                 nb_samples = 1
@@ -112,13 +110,13 @@ class GPUPowerMonitor(threading.Thread):
                 # calc. avg.
                 # print(f"{(prev_powers[1] * prev_powers[0] + power) / (prev_powers[0] +1 )} = {prev_powers[1]} * {prev_powers[0]} + {power} / ({prev_powers[0]} +1) ", flush=True)
                 for i in range(self.num_gpus):
-                    power[i] = int(float(prev_powers[1][i] * prev_powers[0] + power[i]) / float(prev_powers[0] +1))
+                    power[str(i)] = int(float(prev_powers[1][str(i)] * prev_powers[0] + power[str(i)]) / float(prev_powers[0] +1))
                 # prev_powers = self.queue.get()
             nb_samples += 1
                 
             self.queue.put((nb_samples, power))
             time.sleep(self.sampling_interval / 1000.0)
-        f = open("power", 'w')
+        f = open("gpu_power_log", 'w')
         f.write(log)
         f.close()
 
@@ -157,7 +155,12 @@ class GPUPowerMonitor(threading.Thread):
         return power
     def get_avg_power(self):
         # Multiprocess queue communication for getting power data 
-        return self.queue.get()[1]
+        powers = self.queue.get()[1]
+        total = 0
+        for i in powers:
+            total += powers[i]
+        powers['total'] = total
+        return powers
 
     # def set_power(self, dev, power):
     #     power_cap = c_uint64()

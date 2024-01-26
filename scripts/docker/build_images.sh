@@ -1,8 +1,6 @@
 #!/bin/bash
 
-PROJECT_ROOT=$(dirname $(dirname "$PWD"))
-LOGS_DIR=${PROJECT_ROOT}/logs/
-mkdir -p ${LOGS_DIR}
+. ./env_setup.sh
 
 # GPU workloads need to be cloned since they are provate repos and need ssh keys to be cloned. 
 if [ $1 = "gpu-workloads-remote-rocm" ]; then

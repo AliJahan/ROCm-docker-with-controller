@@ -6,12 +6,12 @@ ARG CONTROL_PORT="9090"
 ARG BUILD_MODE="Debug"
 
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y software-properties-common git pkg-config xxd libzmq3-dev iproute2
+RUN apt-get -qq update && apt-get -qq install -y software-properties-common git pkg-config xxd libzmq3-dev iproute2
 
 # most up-to-date cmake 
 RUN wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | gpg --dearmor - | tee /etc/apt/trusted.gpg.d/kitware.gpg >/dev/null
 RUN apt-add-repository 'deb https://apt.kitware.com/ubuntu/ focal main'
-RUN apt-get update && apt-get install -y cmake 
+RUN apt-get -qq update && apt-get -qq install -y cmake 
 
 RUN echo "Building ROCR with CUMasking through SHM" \
   && cd /tmp \

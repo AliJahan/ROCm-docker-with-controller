@@ -6,9 +6,9 @@ ARG CONTROL_PORT="9090"
 ARG BUILD_MODE="Debug"
 
 ENV DEBIAN_FRONTEND=noninteractive
-RUN apt-get update && apt-get install -y environment-modules
+RUN apt-get -qq update && apt-get -qq install -y environment-modules
 
-COPY ../scripts/power_broadcaster/ /power_broadcaster/
+COPY ../workloads /workloads
 
 RUN cd /workloads/Inference-server/ \
   && rm -rf build && mkdir build \

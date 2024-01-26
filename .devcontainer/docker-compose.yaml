@@ -17,7 +17,7 @@ services:
     command: /bin/bash
     profiles: ["amd"]
   remote-rocm-ubuntu: # ROCR-Runtime modified to control cumasking remotely
-    image: remote-rocr-ubuntu:latest
+    image: remote-rocm-ubuntu:latest
     build:
       context: ..
       dockerfile: ./.devcontainer/Dockerfile.remote-rocm-ubuntu

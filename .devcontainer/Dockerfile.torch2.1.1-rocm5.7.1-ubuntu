@@ -1,4 +1,4 @@
-FROM remote-rocr-ubuntu:latest
+FROM remote-rocm-ubuntu:latest
 LABEL maintainer=ajaha004@ucr.edu
 
 ARG PYTORCH_TAG=v2.2.1
