@@ -18,6 +18,8 @@ CLIENT_CMD = f"/workloads/Inference-server/build/bin/client -m {MODEL_NAME} -c 1
 class LCClientRunner:
     running = False
     trace_file = ""
+    MODEL_NAME = "resnet152"
+    CLIENT_CMD = f"/workloads/Inference-server/build/bin/client -m {MODEL_NAME} -c 1 -e trace -f "
     def __init__(self, trace_file: str, gpus: int, max_rps_per_gpu : int, trace_unit_sec: int = 60, debug: bool = False) -> None:
         self.proc = None
         self.debug = debug
@@ -44,9 +46,10 @@ class LCClientRunner:
         f.close()
         return tmp_trace_name
     
-    def run_client(self, cmd: str = ""): # runs client
+    def run_client(self, server_ip: str = "localhost", cmd: str = ""): # runs client
         if len(cmd) == 0:
-            cmd = (CLIENT_CMD+f"{self.trace_file}")
+            cmd = (self.CLIENT_CMD+f"{self.trace_file}")
+        cmd =+ f" -i {server_ip}" # remote server support
         # run client
         print(f"Running the LC client {cmd} ... ", flush=True, end="")
         p = subprocess.Popen(
@@ -123,7 +126,7 @@ class LCClientRunnerWarpper:
         self.gpus=gpus
         self.num_warmpup_load_steps = num_warmpup_load_steps
         self.warmup_step_duration_sec = warmup_step_duration_sec
-    def warmup(self):
+    def warmup(self, server_ip: str = "localhost"):
         # generate warmpup trace
         step = math.ceil(self.max_warmup_load_pct/self.num_warmpup_load_steps)
         loads = list()
@@ -143,9 +146,9 @@ class LCClientRunnerWarpper:
             trace_unit_sec=self.warmup_step_duration_sec,
             debug=self.debug
         )
-        results = client.run_client()
+        results = client.run_client(server_ip=server_ip)
         return results
-    def run(self):
+    def run(self, server_ip: str = "localhost"):
         client = LCClientRunner(
             trace_file=self.trace_file,
             gpus=self.gpus,
@@ -153,7 +156,7 @@ class LCClientRunnerWarpper:
             trace_unit_sec=self.trace_unit_sec,
             debug=self.debug
         )
-        return client.run_client()
+        return client.run_client(server_ip=server_ip)
 
 def test_lc_client_runner():
     import sys

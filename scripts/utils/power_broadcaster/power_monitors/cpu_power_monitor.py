@@ -10,7 +10,7 @@ import sys
 
 class CPUPowerMonitor(threading.Thread):
     lock = threading.Lock()
-    def __init__(self, sampling_interval_msec = 250):
+    def __init__(self, sampling_interval_msec = 500):
         self.set_powers = dict()
         self.sampling_interval_sec = sampling_interval_msec / 1000.0
         self.queue = multiprocessing.Queue()
@@ -40,7 +40,10 @@ class CPUPowerMonitor(threading.Thread):
             with self.lock:
                 if self.runnig == False:
                     break
-            power = int(self.get_cur_power(proc))
+            power_t = self.get_cur_power(proc)
+            if power_t is None: # just in case 
+                continue
+            power = int(power_t)
             if power == None:
                 continue
             # calc. avg. and update

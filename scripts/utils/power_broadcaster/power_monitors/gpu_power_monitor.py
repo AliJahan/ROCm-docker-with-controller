@@ -45,8 +45,6 @@ class GPUPowerMonitor(threading.Thread):
         @param my_ret: Return of RSMI call (rocm_smi_lib API)
         @param metric: Parameter of GPU currently being analyzed
         """
-        global RETCODE
-        global PRINT_JSON
         if my_ret != rsmi_status_t.RSMI_STATUS_SUCCESS:
             err_str = c_char_p()
             rocmsmi.rsmi_status_string(my_ret, byref(err_str))
@@ -56,14 +54,10 @@ class GPUPowerMonitor(threading.Thread):
             if metric is not None:
                 returnString += ' %s: ' % (metric)
             returnString += '%s\t' % (err_str.value.decode())
-            if not PRINT_JSON:
-                if silent:
-                    logging.info('%s', returnString)
-                else:
-                    logging.error('%s', returnString)
-            RETCODE = my_ret
+            print(f"rocm-smi error: {returnString}")
             return False
         return True
+
     def initializeRsmi(self):
         """ initializes rocmsmi if the amdgpu driver is initialized
         """
@@ -98,7 +92,10 @@ class GPUPowerMonitor(threading.Thread):
                     break
             power = dict()
             for i in range(self.num_gpus):
-                power[str(i)] = int(self.get_cur_power(i))
+                gpu_pow = int(self.get_cur_power(i))
+                if gpu_pow == -1: # just in case rocm-smi give error
+                    break
+                power[str(i)] = gpu_pow
             # calc. avg. and update    
             if self.queue.empty(): # no avg for the first sample
                 nb_samples = 1
@@ -116,6 +113,9 @@ class GPUPowerMonitor(threading.Thread):
                 
             self.queue.put((nb_samples, power))
             time.sleep(self.sampling_interval / 1000.0)
+
+        with self.lock:
+            self.runnig = False
         f = open("gpu_power_log", 'w')
         f.write(log)
         f.close()
@@ -146,8 +146,12 @@ class GPUPowerMonitor(threading.Thread):
     def get_cur_power(self, dev):
         power = c_uint32()
         ret = rocmsmi.rsmi_dev_power_ave_get(dev, 0, byref(power))
-        return power.value / 1000000
-    
+        if self.rsmi_ret_ok(ret):
+            return power.value / 1000000
+        else:
+            print(f"get_cur_power for dev: {dev} failed")
+            return -1
+
     def get_cur_power_all(self):
         power = 0
         for i in range(self.num_gpus):

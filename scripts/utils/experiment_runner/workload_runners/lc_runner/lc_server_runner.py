@@ -20,8 +20,10 @@ class LCServerRunner:
     
     def run_server(self, cmd):
         print("Running the LC server ... ", flush=True, end="")
+        # CUMASKING_CONTROLLER_LOG is set for cumasking controller (required for rocr to activate cumasking)
         env = {
             **os.environ,
+            "CUMASKING_CONTROLLER_LOG": "/tmp/log",
             # "OMP_NUM_THREADS": f'{int(ceil(n_gpus/2))}',
             "OMP_NUM_THREADS": f'{int(1)}',
             # "OMP_THREAD_LIMIT": 
@@ -37,7 +39,7 @@ class LCServerRunner:
             # "DEVICE_LIB_PATH": "/opt/rocm/amdgcn/bitcode/",
             # "PATH": path_all,
             # "LD_LIBRARY_PATH": ld_all,
-            "HIP_HIDDEN_FREE_MEM": "320",
+            # "HIP_HIDDEN_FREE_MEM": "320",
             # "AMDDeviceLibs_DIR": "/opt/rocm/rocdl",
             # "amd_comgr_DIR": "/opt/rocm/comgr",
         }
@@ -121,10 +123,8 @@ class LCServerRunnerWrapper:
         if self.server_runner is not None:
             self.server_runner.resume_worker(model, gpu)
 
-class LCRemoteRunner(threading.Thread):
+class LCRemoteRunner:
     lc_runner = None
-    running = False
-    lock = threading.Lock()
     socket_poller = None
     subscriber_socket = None
     def __init__(self, control_ip: str, control_port: str = "45678", app_name: str = "Inference-Server"):
@@ -133,7 +133,6 @@ class LCRemoteRunner(threading.Thread):
         self.control_port = control_port
         self.control_ip = control_ip
         self.subscriber_socket, self.socket_poller = self.setup_socket()
-        threading.Thread.__init__(self)
 
     def setup_socket(self):
         self.ctx = zmq.Context.instance()
@@ -155,17 +154,11 @@ class LCRemoteRunner(threading.Thread):
             print(f"Failed! error: {e}")
         return None, None
 
-    def run(self):
-        with self.lock:
-            self.running = True
-
-        print("Remote runner running...", flush=True)
+    def start(self):
+        print("Remote LCRunner running...", flush=True)
         while(True):
-            print("polling")
-            socks = dict(self.socket_poller.poll(100))
-
+            socks = dict(self.socket_poller.poll(10))
             if self.subscriber_socket in socks and socks[self.subscriber_socket] == zmq.POLLIN:
-                print("msg rcvd", flush=True)
                 msg = None
                 try:
                     msg = self.subscriber_socket.recv_string()
@@ -181,56 +174,41 @@ class LCRemoteRunner(threading.Thread):
                 cmd, args = msg.split(":")
                 if cmd == "start": #start:model:gpus:batch_size
                     model, gpus, batch_size = args
-                    with self.lock:
-                        if self.lc_runner is None:
-                            self.lc_runner = LCServerRunnerWrapper()
-                            self.lc_runner.start_server(model=model, gpus=gpus, batch_size=batch_size)
-                        else:
-                            print("lc_runner already running, ignoring msg", flush=True)
+                    if self.lc_runner is None:
+                        self.lc_runner = LCServerRunnerWrapper()
+                        self.lc_runner.start_server(model=model, gpus=gpus, batch_size=batch_size)
+                    else:
+                        print("lc_runner already running, ignoring msg", flush=True)
                 
                 elif cmd == "pause": #pause:model:gpu
                     model, gpus= args
-                    with self.lock:
-                        if self.lc_runner is not None:
-                            self.lc_runner.pause_worker(model=model, gpus=gpus)
-                        else:
-                            print("lc_runner is not running, ignoring msg", flush=True)
+                    if self.lc_runner is not None:
+                        self.lc_runner.pause_worker(model=model, gpus=gpus)
+                    else:
+                        print("lc_runner is not running, ignoring msg", flush=True)
                 elif cmd == "resume": #pause:model:gpu
                     model, gpus= args
-                    with self.lock:
-                        if self.lc_runner is not None:
-                            self.lc_runner.resume_worker(model=model, gpus=gpus)
-                        else:
-                            print("lc_runner is not running, ignoring msg", flush=True)
-                
+                    if self.lc_runner is not None:
+                        self.lc_runner.resume_worker(model=model, gpus=gpus)
+                    else:
+                        print("lc_runner is not running, ignoring msg", flush=True)
+            
                 elif cmd == "stop":
-                    with self.lock:
-                        if self.lc_runner is not None:
-                            self.lc_runner.stop_server()
-                            self.lc_runner = None
+                    if self.lc_runner is not None:
+                        self.lc_runner.stop_server()
+                        self.lc_runner = None
                 elif cmd == "finish":
                     print(f"received finish command, shutting down", flush=True)
                     break
                 else:
                     print(f"received unsupported command: {msg}", flush=True)
 
-            with self.lock:
-                if self.running == False:
-                    break
-        
-        with self.lock:
-            if self.lc_runner is not None:
-                self.lc_runner.stop_server()
-                self.lc_runner = None
-        
-        print("RemoteRunner shut down", flush=True)
 
-    def stop(self):
-        with self.lock:
-            self.running = False
-        if self.is_alive():
-            self.join()
+        if self.lc_runner is not None:
+            self.lc_runner.stop_server()
+            self.lc_runner = None
         
+        print("Remote LCRunner shut down!", flush=True)
 
 
 def test_lc_server_runner_wrapper():
@@ -252,10 +230,11 @@ def test_remote_runner():
         control_port="45678",
         app_name="Inference-Server",
     )
+    print("Starting...")
     runner.start()
-    time.sleep(300)
-    runner.stop()
+    print("Stopped by remote")
+    
 
 if __name__ == "__main__":
-    test_lc_server_runner_wrapper()
-    # test_remote_runner()
+    # test_lc_server_runner_wrapper()
+    test_remote_runner()

@@ -46,6 +46,7 @@ def broadcast_power(publish_socket, cpu_read_interval_msec, gpu_read_interval_ms
         time.sleep(broad_cast_interval_sec)
     cpu_mon.stop()
     gpu_mon.stop()
+
 def main():
     cpu_read_interval_msec = 500
     gpu_read_interval_msec = 500

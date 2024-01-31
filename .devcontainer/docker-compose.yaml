@@ -1,6 +1,19 @@
 version: "3.8"
 
 services:
+  experiment-runner:
+    image: experiment-runner-ubuntu20.04:latest
+    build:
+      context: ..
+      dockerfile: ./.devcontainer/Dockerfile.experiment-runner-ubuntu20.04
+    stdin_open: true
+    tty: true
+    volumes:
+      - ../:/workspace
+    working_dir: /workspace
+    command: /bin/bash
+    network_mode: "host"
+
   rocm-ubuntu: # rocm-ubuntu: rocm-5.7.1 installed on ubuntu 20.04
     image: rocm5.7.1-ubuntu20.04:latest
     build:
@@ -79,6 +92,10 @@ services:
       dockerfile: ./.devcontainer/Dockerfile.gpu-workloads-remote-rocm
     stdin_open: true
     tty: true
+    environment:
+      - WORKLOAD=${WORKLOAD}
+      - CONTROLLER_IP=${CONTROLLER_IP}
+      - CONTROLLER_PORT=${CONTROLLER_PORT}
     volumes:
       - ../:/workspace
     devices:

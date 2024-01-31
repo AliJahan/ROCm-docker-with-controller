@@ -9,9 +9,15 @@ class PowerCollector(threading.Thread):
     queue = multiprocessing.Queue()
     power_socket = None
     poller = None
-    def __init__(self, collection_interval_sec: int = 1, power_broadcaster_port: str = "6000"):
+    def __init__(
+            self,
+            power_broadcaster_ip: str,
+            power_broadcaster_port: str = "6000",
+            collection_interval_sec: int = 1
+        ):
         self.collection_interval_sec = collection_interval_sec
         self.power_broadcaster_port = power_broadcaster_port
+        self.power_broadcaster_ip = power_broadcaster_ip
         self.initialized = self.init()
         self.runnig = False
         self.num_samples = 0
@@ -26,6 +32,7 @@ class PowerCollector(threading.Thread):
             return False
     def deinit(self):
         if self.power_socket is not None:
+            self.power_socket.close()
             del self.power_socket
         self.ctx.term()
         
@@ -37,7 +44,7 @@ class PowerCollector(threading.Thread):
         poller = None
         print(f"Connecting ... ", end="")
         try:
-            publisher.connect(f"tcp://localhost:{port}")
+            publisher.connect(f"tcp://{self.power_broadcaster_ip}:{port}")
             publisher.setsockopt(zmq.SUBSCRIBE, b"")
             publisher.setsockopt(zmq.CONFLATE, 1)
             poller = zmq.Poller()
@@ -105,10 +112,11 @@ class PowerCollector(threading.Thread):
         self.stop()
 
 def main():
+    ip = "localhost"
     port = "6000"
     sampling_interval_sec = 1
     num_samples = 10
-    power_colletor = PowerCollector(sampling_interval_sec, port)
+    power_colletor = PowerCollector(ip, port, sampling_interval_sec)
     power_colletor.start()
     for i in range(num_samples):
         print(f"#{i}: {power_colletor.get_cur_power()}")

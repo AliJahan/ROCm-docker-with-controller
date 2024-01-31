@@ -3,8 +3,9 @@ import psutil
 import multiprocessing
 import time
 import threading
-import copy
+import os
 import zmq
+
 
 class BatchRunner:
     run_cmd = "/workloads/miniMDock/bin/autodock_hip_gpu_64wi -lfile /workloads/miniMDock/input/7cpa/7cpa_ligand.pdbqt -nrun 10000 -fldfile /workloads/miniMDock/input/7cpa/7cpa_protein.maps.fld -devnum "
@@ -21,8 +22,14 @@ class BatchRunner:
 
     def run(self, gpu: int):
         cmd = self.run_cmd + str(gpu+1)
+        # CUMASKING_CONTROLLER_LOG is set for cumasking controller (required for rocr to activate cumasking)
+        env = {
+            **os.environ,
+            "CUMASKING_CONTROLLER_LOG": "/tmp/log"
+        }
         p = subprocess.Popen(
             cmd.split(" "),
+            env=env,
             stdout=subprocess.PIPE,
             stdin=subprocess.PIPE,
             stderr=subprocess.PIPE
@@ -119,11 +126,9 @@ class BatchRunner:
         return {"total_avg": avg_tp, "num_iterations": tp[1], "unit": "iteration_per_sec"}
 
 
-class BatchRemoteRunner(threading.Thread):
+class BatchRemoteRunner:
     be_runners = dict()
     be_runners_stats = dict()
-    running = False
-    lock = threading.Lock()
     socket_poller = None
     subscriber_socket = None
     def __init__(self, control_ip: str, control_port: str = "45678", app_name: str = "miniMDock"):
@@ -153,17 +158,11 @@ class BatchRemoteRunner(threading.Thread):
             print(f"Failed! error: {e}")
         return None, None
 
-    def run(self):
-        with self.lock:
-            self.running = True
-
-        print("Remote runner running...", flush=True)
+    def start(self):
+        print("Remote BERunner running...", flush=True)
         while(True):
-            print("polling")
-            socks = dict(self.socket_poller.poll(100))
-
+            socks = dict(self.socket_poller.poll(10))
             if self.subscriber_socket in socks and socks[self.subscriber_socket] == zmq.POLLIN:
-                print("msg rcvd", flush=True)
                 msg = None
                 try:
                     msg = self.subscriber_socket.recv_string()
@@ -177,59 +176,54 @@ class BatchRemoteRunner(threading.Thread):
                 if msg is None:
                     continue
                 cmd, args = msg.split(":")
-                if cmd == "start": #start:gpus (1:2) no trailing :
+                if cmd == "start": #start:gpus (1:2...) no trailing :
                     gpus = args
-                    with self.lock:
-                            for gpu in gpus:
-                                if gpu in self.be_runners == False:
-                                    self.be_runners[gpu] = BatchRunner()
-                                    self.be_runners[gpu].run(gpu)
-                                else:
-                                    print("be_runner already running, ignoring msg", flush=True)
+                    for gpu in gpus:
+                        if gpu in self.be_runners == False:
+                            self.be_runners[gpu] = BatchRunner()
+                            self.be_runners[gpu].run(gpu)
+                        else:
+                            print("be_runner already running, ignoring msg", flush=True)
                 
-                elif cmd == "pause": #pause:gpus
+                elif cmd == "pause": #pause:gpus (1:2...) no trailing :
                     gpus= args
-                    with self.lock:
-                        for gpu in gpus:
-                            if gpu in self.be_runners:
-                                self.be_runners[gpu].suspend()
-                            else:
-                                print("be_runner is not running, ignoring msg", flush=True)
-                elif cmd == "resume": #pause:gpus
+                    for gpu in gpus:
+                        if gpu in self.be_runners:
+                            self.be_runners[gpu].suspend()
+                        else:
+                            print("be_runner is not running, ignoring msg", flush=True)
+                elif cmd == "resume": #resume:gpus (1:2...) no trailing :
                     gpus= args
-                    with self.lock:
-                        for gpu in gpus:
-                            if gpu in self.be_runners:
-                                self.be_runners[gpu].resume()
-                            else:
-                                print("be_runner is not running, ignoring msg", flush=True)
+                    for gpu in gpus:
+                        if gpu in self.be_runners:
+                            self.be_runners[gpu].resume()
+                        else:
+                            print("be_runner is not running, ignoring msg", flush=True)
                 
-                elif cmd == "stop":
-                    with self.lock:
-                        if len(self.be_runners) > 0:
-                            for gpu in self.be_runners:
-                                out = self.be_runners[gpu].terminate()
-                                del self.be_runners[gpu]
-                                self.be_runners_stats[gpu] = out
-                elif cmd == "finish":
+                elif cmd == "stop": #stop:gpus (1:2...) no trailing :
+                    if len(self.be_runners) > 0:
+                        for gpu in self.be_runners:
+                            out = self.be_runners[gpu].terminate()
+                            del self.be_runners[gpu]
+                            self.be_runners_stats[gpu] = out
+                elif cmd == "finish": #finish:stat_file_name
+                    stat_file_name = args[0]
+                    self.dump_stats(stat_file_name)
                     print(f"received finish command, shutting down", flush=True)
                     break
                 else:
                     print(f"received unsupported command: {msg}", flush=True)
 
-            with self.lock:
-                if self.running == False:
-                    break
-        
-        with self.lock:
-            if len(self.be_runners) > 0:
-                for gpu in self.be_runners:
-                    out = self.be_runners[gpu].terminate()
-                    del self.be_runners[gpu]
-                    self.be_runners_stats[gpu] = out
-        
-        print("BERemoteRunner shut down", flush=True)
+        # in case runners exist after finish message.
+        if len(self.be_runners) > 0:
+            for gpu in self.be_runners:
+                out = self.be_runners[gpu].terminate()
+                del self.be_runners[gpu]
+                self.be_runners_stats[gpu] = out
+        print("Remote BERunner shut down!", flush=True)
+
     def dump_stats(self, file_name: str):
+        print(f"Saving stats to: {file_name}")
         f = open(file_name, 'w')
         f.write("gpu,avg_through_put,iterations,unit\n")
         with self.lock:
@@ -240,12 +234,7 @@ class BatchRemoteRunner(threading.Thread):
                 unit = gpu_out["unit"]
                 f.write(f"{gpu},{avg_tp},{iterations},{unit}\n")
         f.close()
-
-    def stop(self):
-        with self.lock:
-            self.running = False
-        if self.is_alive():
-            self.join()
+        print(f"Saving stats done")
 
 def test_batch_runner():
     import sys
@@ -277,15 +266,16 @@ def test_batch_runner():
     print(f"termination: {f.terminate()}", flush=True)
     
 def test_remote_batch_runner():
+    stats_file = "/workspace/workloads/remote_be_runner_stats_test"
     runner = BatchRemoteRunner(
         control_ip="localhost",
         control_port="45678",
         app_name="miniMDock",
     )
+    print("Starting...")
     runner.start()
-    time.sleep(300)
-    runner.stop()
-    runner.dump_stats("/workspace/workloads/remote_be_runner_stats")
+    print("Stopped by remote")
 
 if __name__ == "__main__":
-    test_batch_runner()
+    # test_batch_runner()
+    test_remote_batch_runner()
