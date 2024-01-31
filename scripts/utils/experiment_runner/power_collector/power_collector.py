@@ -7,6 +7,8 @@ import multiprocessing
 class PowerCollector(threading.Thread):
     lock = threading.Lock()
     queue = multiprocessing.Queue()
+    power_socket = None
+    poller = None
     def __init__(self, collection_interval_sec: int = 1, power_broadcaster_port: str = "6000"):
         self.collection_interval_sec = collection_interval_sec
         self.power_broadcaster_port = power_broadcaster_port
@@ -19,11 +21,12 @@ class PowerCollector(threading.Thread):
         return self.initialized
     
     def init(self):
-        self.power_socket = self.setup_socket(self.power_broadcaster_port)
+        self.power_socket, self.poller = self.setup_socket(self.power_broadcaster_port)
         if  self.power_socket is None:
             return False
     def deinit(self):
-        del self.power_socket
+        if self.power_socket is not None:
+            del self.power_socket
         self.ctx.term()
         
 
@@ -31,46 +34,52 @@ class PowerCollector(threading.Thread):
         print(f"Creating power collection socket on port: {port}")
         self.ctx = zmq.Context.instance()
         publisher = self.ctx.socket(zmq.SUB)
-        
+        poller = None
         print(f"Connecting ... ", end="")
         try:
             publisher.connect(f"tcp://localhost:{port}")
             publisher.setsockopt(zmq.SUBSCRIBE, b"")
             publisher.setsockopt(zmq.CONFLATE, 1)
+            poller = zmq.Poller()
+            poller.register(publisher, zmq.POLLIN)
             print("Success!")
-            return publisher
+            return publisher, poller
         except Exception as e:
             print(f"Failed! error: {e}")
-        return None
+        return None, None
 
     def run(self):
         with self.lock:
             self.runnig = True
+        print("PowerCollector is running...")
         while True:
+            socks = dict(self.poller.poll(5))
+
+            if self.power_socket in socks and socks[self.power_socket] == zmq.POLLIN:
+                msg = None
+                try:
+                    msg = self.power_socket.recv_string()
+                except zmq.ZMQError as e:
+                    if e.errno == zmq.ETERM:
+                        print("ZMQ socket interrupted/terminated, Quitting...")
+                    else:
+                        print(f"ZMQ socket error: {e}, Quitting...")
+                    break
+                # It should not be None here (just in case)
+                if msg is None:
+                    continue
+                # Record current power data
+                rcvd_power_data = json.loads(msg)
+                with self.lock:
+                    self.powers_list.append(rcvd_power_data)
+                    self.num_samples += 1
+                if self.queue.empty() == False:
+                    self.queue.get()
+                self.queue.put(rcvd_power_data)
             with self.lock:
                 if self.runnig == False:
                     break
-            msg = None
-            try:
-                msg = self.power_socket.recv_string()
-            except zmq.ZMQError as e:
-                if e.errno == zmq.ETERM:
-                    print("ZMQ socket interrupted/terminated, Quitting...")
-                else:
-                    print(f"ZMQ socket error: {e}, Quitting...")
-                break
-            # It should not be None here (just in case)
-            if msg is None:
-                continue
-            # Record current power data
-            rcvd_power_data = json.loads(msg)
-            with self.lock:
-                self.powers_list.append(rcvd_power_data)
-                self.num_samples += 1
-            if self.queue.empty() == False:
-                self.queue.get()
-            self.queue.put(rcvd_power_data)
-            time.sleep(self.collection_interval_sec)
+            # time.sleep(self.collection_interval_sec)
 
     def get_cur_power(self): # gets the last power published
         return self.queue.get()
@@ -97,7 +106,7 @@ class PowerCollector(threading.Thread):
 
 def main():
     port = "6000"
-    sampling_interval_sec = 2
+    sampling_interval_sec = 1
     num_samples = 10
     power_colletor = PowerCollector(sampling_interval_sec, port)
     power_colletor.start()
