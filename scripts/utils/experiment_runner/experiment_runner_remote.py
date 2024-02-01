@@ -9,8 +9,8 @@ class RemoteExperimentRunner:
     def __init__(
             self,
             lc_load_trace: str = "/tmp/trace",
-            target_ip: str = "localhost",
-            remote_ip: str = "172.20.0.1",
+            target_ip: str = "172.20.0.9",
+            remote_ip: str = "172.20.0.6",
             target_resource_ctl_port: str = "2000",
             target_workload_ctrl_port: str = "4000",
             target_power_broadcaster_port: str = "6000",
