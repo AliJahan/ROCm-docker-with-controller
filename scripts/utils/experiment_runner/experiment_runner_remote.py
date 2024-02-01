@@ -37,21 +37,23 @@ class RemoteExperimentRunner:
             remote_workload_control_port=remote_workload_ctl_port,
             client_trace_file=lc_load_trace
         )
-
-    def setup_server(self):
+    def cleanup(self):
         print(f"Stopping power-broadcaster image on target server (just in case)", flush=True)
         assert self.docker_runner.stop_docker("power-broadcaster") == True, "Could not stop"
-        
+
+    def setup_server(self):
         print(f"Staring power-broadcaster image on target server: {self.target_ip} ", flush=True)
         assert self.docker_runner.start_docker("power-broadcaster") == True, "Failed! stopping experiments!"
 
     def start(self):
         self.setup_server()
         
+    def __del__(self):
+        self.cleanup()
 
 if __name__ == "__main__":
     import time
     remote_runner = RemoteExperimentRunner()
     remote_runner.start()
-    
+
 #IP=`ip r | head -n 1 | awk n 1 | awk '{p`intf $3}'
