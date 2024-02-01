@@ -67,7 +67,7 @@ services:
     #   - "9090:9090"
     network_mode: "host"
   Inference-Server: # contains gpu workloads on remotely controllable rocm
-    image: Inference-Server-remote-rocm-ubuntu:latest
+    image: inference-server-remote-rocm-ubuntu:latest
     build:
       context: ..
       dockerfile: ./.devcontainer/Dockerfile.gpu-workloads-remote-rocm
@@ -89,7 +89,7 @@ services:
     #   - "9090:9090"
     network_mode: "host"
   miniMDock: # contains gpu workloads on remotely controllable rocm
-    image: miniMDock-remote-rocm-ubuntu:latest
+    image: minimdock-remote-rocm-ubuntu:latest
     build:
       context: ..
       dockerfile: ./.devcontainer/Dockerfile.gpu-workloads-remote-rocm
