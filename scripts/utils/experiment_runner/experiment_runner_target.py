@@ -4,7 +4,6 @@ import os
 
 class TargetExperimentRunner:
     subscriber_socket = None
-    channel_name = "target"
     supported_images = ["power-broadcaster", "Inference-Server", "miniMDock"]
     ctx = None
     def __init__(
@@ -27,7 +26,7 @@ class TargetExperimentRunner:
             
             # poller = zmq.Poller()
             # poller.register(publisher, zmq.POLLIN)
-            print(f"Success (channel: {self.channel_name})!")
+            print(f"Success!")
         except Exception as e:
             print(f"Failed! error: {e}")
         return publisher
@@ -50,7 +49,9 @@ class TargetExperimentRunner:
         env = {
             **os.environ,
             "CONTROLLER_IP": str(remote_ip),
-            "CONTROLLER_PORT": str(remote_port)
+            "CONTROLLER_PORT": str(remote_port),
+            "PROJECT_ROOT": str(self.project_root_path),
+            "LOGS_DIR": str(self.project_root_path+"/"+"docker_logs")
         }
         
         cmd = f"{self.project_root_path}/scripts/docker/run_image.sh {image_name}"
@@ -64,13 +65,19 @@ class TargetExperimentRunner:
         p.wait()
         return True
 
-    def run_docker(self, image_name, remote_ip, remote_port):
+    def stop_docker(self, image_name):
         if self.verify_image_name(image_name=image_name) is False:
             return False
-
+        
         cmd = f"{self.project_root_path}/scripts/docker/stop_image.sh {image_name}"
+        env = {
+            **os.environ,
+            "PROJECT_ROOT": str(self.project_root_path),
+            "LOGS_DIR": str(self.project_root_path+"/"+"docker_logs")
+        }
         p = subprocess.Popen(
             cmd.split(" "),
+            env=env,
             stdout=subprocess.PIPE,
             stdin=subprocess.PIPE,
             stderr=subprocess.PIPE
@@ -81,12 +88,11 @@ class TargetExperimentRunner:
     def start(self):
         if self.subscriber_socket is None:
             return
-        print(f"Running target experiment runner channel:{self.channel_name} localhost:{self.control_port}")
+        print(f"Running target experiment runner localhost:{self.control_port}")
         while True:
             msg = None
             sender = None
             try:
-                print("rcving", flush=True)
                 sender = self.subscriber_socket.recv()
                 msg = self.subscriber_socket.recv_string()
                 print(f"rcved from ({sender}): {msg}", flush=True)
@@ -98,7 +104,6 @@ class TargetExperimentRunner:
                 break
             if msg is None:
                 continue
-            print(f"rcvd mesg: {msg}", flush=True)
             splitted = msg.split(":")
             cmd, args = splitted[0], splitted[1:]
             if cmd == "run":
@@ -106,7 +111,7 @@ class TargetExperimentRunner:
                 res = self.run_docker(image_name=image_name, remote_ip=remote_ip, remote_port=remote_port)
                 self.reply_res(sender, res)
             elif cmd == "stop":
-                image_name = args
+                image_name = args[0]
                 res = self.stop_docker(image_name=image_name)
                 self.reply_res(sender, res)
             
@@ -114,7 +119,7 @@ class TargetExperimentRunner:
 
 def main():
     control_port = "4000"
-    project_path = "/home/ajaha004/repos/rocr/standalone-docker/ROCm-docker-with-controller/"
+    project_path = "/home/ajaha004/repos/rocr/standalone-docker/ROCm-docker-with-controller"
     expr_runner = TargetExperimentRunner(project_root_path=project_path, control_port=control_port)
     expr_runner.start()
     print("@@done")

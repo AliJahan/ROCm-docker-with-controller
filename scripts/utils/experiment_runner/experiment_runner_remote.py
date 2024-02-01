@@ -47,12 +47,11 @@ class RemoteExperimentRunner:
 
     def start(self):
         self.setup_server()
-        print("done")
         
 
 if __name__ == "__main__":
     import time
     remote_runner = RemoteExperimentRunner()
-    print(remote_runner.start())
-    print("Done")
+    remote_runner.start()
+    
 #IP=`ip r | head -n 1 | awk n 1 | awk '{p`intf $3}'
