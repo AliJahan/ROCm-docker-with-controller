@@ -47,25 +47,6 @@ services:
     # ports:
     #   - "9090:9090"
     network_mode: "host"
-
-  # torch-rmote-rocm-ubuntu: # rocm-ubuntu: rocm-5.7.1 installed
-  #   image: torch2.1-remote-rocm-ubuntu:latest
-  #   build:
-  #     context: ..
-  #     dockerfile: ./.devcontainer/Dockerfile.torch2.1.1-rocm5.7.1-ubuntu
-  #   stdin_open: true
-  #   tty: true
-  #   volumes:
-  #     - ../:/workspace
-  #   devices:
-  #     - "/dev/kfd:/dev/dri"
-  #   privileged: true
-  #   working_dir: /workspace
-  #   command: /bin/bash
-  #   profiles: ["amd"]
-  #   # ports:
-  #   #   - "9090:9090"
-  #   network_mode: "host"
   tvm-remote-rocm-ubuntu: # tvm-unity and pytorch 2.1 installed on remotely controllable (cumasking) rocm
     image: tvm-remote-rocm-ubuntu:latest
     build:
@@ -85,15 +66,37 @@ services:
     # ports:
     #   - "9090:9090"
     network_mode: "host"
-  gpu-workloads-remote-rocm: # contains gpu workloads on remotely controllable rocm
-    image: gpu-workloads-remote-rocm-ubuntu:latest
+  Inference-Server: # contains gpu workloads on remotely controllable rocm
+    image: Inference-Server-remote-rocm-ubuntu:latest
     build:
       context: ..
       dockerfile: ./.devcontainer/Dockerfile.gpu-workloads-remote-rocm
     stdin_open: true
     tty: true
     environment:
-      - WORKLOAD=${WORKLOAD}
+      - WORKLOAD=Inference-Server
+      - CONTROLLER_IP=${CONTROLLER_IP}
+      - CONTROLLER_PORT=${CONTROLLER_PORT}
+    volumes:
+      - ../:/workspace
+    devices:
+      - "/dev/kfd:/dev/dri"
+    privileged: true
+    working_dir: /workspace
+    command: /bin/bash
+    profiles: ["amd"]
+    # ports:
+    #   - "9090:9090"
+    network_mode: "host"
+  miniMDock: # contains gpu workloads on remotely controllable rocm
+    image: miniMDock-remote-rocm-ubuntu:latest
+    build:
+      context: ..
+      dockerfile: ./.devcontainer/Dockerfile.gpu-workloads-remote-rocm
+    stdin_open: true
+    tty: true
+    environment:
+      - WORKLOAD=miniMDock
       - CONTROLLER_IP=${CONTROLLER_IP}
       - CONTROLLER_PORT=${CONTROLLER_PORT}
     volumes:

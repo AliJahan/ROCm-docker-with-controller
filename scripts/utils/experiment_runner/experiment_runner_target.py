@@ -5,6 +5,7 @@ import os
 class TargetExperimentRunner:
     subscriber_socket = None
     channel_name = "target"
+    supported_images = ["power-broadcaster", "Inference-Server", "miniMDock"]
     ctx = None
     def __init__(
             self,
@@ -19,14 +20,10 @@ class TargetExperimentRunner:
         self.ctx = zmq.Context.instance()
         publisher = None
         # poller = None
-        print(f"Binding localhost:{self.control_port}... ", end="")
+        print(f"Binding docker_runner to localhost:{self.control_port} ... ", end="")
         try:
-            publisher = self.ctx.socket(zmq.SUB)
-            publisher.setsockopt(zmq.SUBSCRIBE, b"")
-            publisher.setsockopt(zmq.CONFLATE, 1)
+            publisher = self.ctx.socket(zmq.ROUTER)
             publisher.bind(f"tcp://*:{self.control_port}")
-            
-            # publisher.setsockopt(zmq.LINGER, 0)
             
             # poller = zmq.Poller()
             # poller.register(publisher, zmq.POLLIN)
@@ -34,15 +31,29 @@ class TargetExperimentRunner:
         except Exception as e:
             print(f"Failed! error: {e}")
         return publisher
+        
+    def reply_res(self, client, res):
+        msg = "SUCESS" if res == True else "FAILED!"
+        self.subscriber_socket.send(client, flags=zmq.SNDMORE)
+        self.subscriber_socket.send_string(msg)
 
-    def run_docker(self, workload, remote_ip, remote_port):
+    def verify_image_name(self, image_name):
+        if image_name not in self.supported_images:
+            print(f"Error: unsupported docker name: {image_name}", end="", flush=True)
+            return False
+        return True
+
+    def run_docker(self, image_name, remote_ip, remote_port):
+        if self.verify_image_name(image_name=image_name) is False:
+            return False
+
         env = {
             **os.environ,
-            "WORKLOAD": str(workload),
             "CONTROLLER_IP": str(remote_ip),
             "CONTROLLER_PORT": str(remote_port)
         }
-        cmd = f"{self.project_root_path}/scripts/docker/run_image.sh "
+        
+        cmd = f"{self.project_root_path}/scripts/docker/run_image.sh {image_name}"
         p = subprocess.Popen(
             cmd.split(" "),
             env=env,
@@ -50,6 +61,22 @@ class TargetExperimentRunner:
             stdin=subprocess.PIPE,
             stderr=subprocess.PIPE
         )
+        p.wait()
+        return True
+
+    def run_docker(self, image_name, remote_ip, remote_port):
+        if self.verify_image_name(image_name=image_name) is False:
+            return False
+
+        cmd = f"{self.project_root_path}/scripts/docker/stop_image.sh {image_name}"
+        p = subprocess.Popen(
+            cmd.split(" "),
+            stdout=subprocess.PIPE,
+            stdin=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        p.wait()
+        return True
     
     def start(self):
         if self.subscriber_socket is None:
@@ -57,12 +84,12 @@ class TargetExperimentRunner:
         print(f"Running target experiment runner channel:{self.channel_name} localhost:{self.control_port}")
         while True:
             msg = None
+            sender = None
             try:
                 print("rcving", flush=True)
+                sender = self.subscriber_socket.recv()
                 msg = self.subscriber_socket.recv_string()
-                print("rcvs", flush=True)
-                # msg = self.subscriber_socket.recv_string()
-                print("rcvs", flush=True)
+                print(f"rcved from ({sender}): {msg}", flush=True)
             except zmq.ZMQError as e:
                 if e.errno == zmq.ETERM:
                     print("ZMQ socket interrupted/terminated, Quitting...", flush=True)
@@ -72,9 +99,17 @@ class TargetExperimentRunner:
             if msg is None:
                 continue
             print(f"rcvd mesg: {msg}", flush=True)
-            cmd, args = msg.split(":")
-            # if cmd == "run":
-            #     workload, remote_ip, target_port = args
+            splitted = msg.split(":")
+            cmd, args = splitted[0], splitted[1:]
+            if cmd == "run":
+                image_name, remote_ip, remote_port = args
+                res = self.run_docker(image_name=image_name, remote_ip=remote_ip, remote_port=remote_port)
+                self.reply_res(sender, res)
+            elif cmd == "stop":
+                image_name = args
+                res = self.stop_docker(image_name=image_name)
+                self.reply_res(sender, res)
+            
         print("done!!")
 
 def main():

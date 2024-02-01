@@ -27,7 +27,7 @@ class PowerCollector(threading.Thread):
         return self.initialized
     
     def init(self):
-        self.power_socket, self.poller = self.setup_socket(self.power_broadcaster_port)
+        self.power_socket, self.poller = self.setup_socket()
         if  self.power_socket is None:
             return False
     def deinit(self):
@@ -37,14 +37,13 @@ class PowerCollector(threading.Thread):
         self.ctx.term()
         
 
-    def setup_socket(self, port):
-        print(f"Creating power collection socket on port: {port}")
+    def setup_socket(self):
+        print(f"Connecting to power broadcaster {self.power_broadcaster_ip}:{self.power_broadcaster_port} ... ", end="")
         self.ctx = zmq.Context.instance()
         publisher = self.ctx.socket(zmq.SUB)
         poller = None
-        print(f"Connecting ... ", end="")
         try:
-            publisher.connect(f"tcp://{self.power_broadcaster_ip}:{port}")
+            publisher.connect(f"tcp://{self.power_broadcaster_ip}:{self.power_broadcaster_port}")
             publisher.setsockopt(zmq.SUBSCRIBE, b"")
             publisher.setsockopt(zmq.CONFLATE, 1)
             poller = zmq.Poller()
@@ -112,7 +111,7 @@ class PowerCollector(threading.Thread):
         self.stop()
 
 def main():
-    ip = "localhost"
+    ip = "172.20.0.9"
     port = "6000"
     sampling_interval_sec = 1
     num_samples = 10

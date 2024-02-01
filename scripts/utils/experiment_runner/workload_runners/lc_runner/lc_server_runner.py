@@ -142,8 +142,8 @@ class LCRemoteRunner:
         try:
             publisher = self.ctx.socket(zmq.SUB)
             publisher.connect(f"tcp://{self.control_ip}:{self.control_port}")
-            publisher.setsockopt(zmq.SUBSCRIBE, bytes(self.app_name.encode('utf-8')))
-            publisher.setsockopt(zmq.CONFLATE, 1)
+            publisher.setsockopt_string(zmq.SUBSCRIBE, self.app_name)
+            # publisher.setsockopt(zmq.CONFLATE, 1)
             print(f"(channel subscribed: {self.app_name}) ", end="")
             poller = zmq.Poller()
             poller.register(publisher, zmq.POLLIN)
@@ -171,7 +171,8 @@ class LCRemoteRunner:
                 # It should not be None here (just in case)
                 if msg is None:
                     continue
-                cmd, args = msg.split(":")
+                splitted = msg.split(":")
+                cmd, args = splitted[0], splitted[1:]
                 if cmd == "start": #start:model:gpus:batch_size
                     model, gpus, batch_size = args
                     if self.lc_runner is None:

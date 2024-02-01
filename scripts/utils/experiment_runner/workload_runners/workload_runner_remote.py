@@ -2,21 +2,76 @@ import zmq
 from .lc_runner.lc_client_runner import LCClientRunnerWarpper
 from .lc_runner.lc_client_runner import LCClientRunnerWarpper
 
-class RemoteWorkloadsRunner:
+class RemoteDockerRunner:
+    docker_controller_socket = None
+    remote_header = "remote_docker_runner"
+    def __init__(
+            self,
+            remote_ip: str,
+            target_ip: str,
+            target_docker_control_port: str,
+            remote_workload_control_port: str
+    ):
+        self.remote_ip = remote_ip
+        self.target_ip = target_ip
+        self.target_docker_control_port = target_docker_control_port
+        self.remote_workload_control_port = remote_workload_control_port
+        self.docker_controller_socket = self.setup_socket()
+
+    def setup_socket(self):
+        self.ctx = zmq.Context.instance()
+        publisher = None
+        # poller = None
+        print(f"Connecting to {self.target_ip}:{self.target_docker_control_port}... ", end="")
+        try:
+            publisher = self.ctx.socket(zmq.DEALER)
+            publisher.setsockopt_string(zmq.IDENTITY, self.remote_header)
+            publisher.connect(f"tcp://{self.target_ip}:{self.target_docker_control_port}")
+            # publisher.setsockopt(zmq.CONFLATE, 1)
+            # print(f"(channel subscribed: {self.app_name}) ", end="")
+            # poller = zmq.Poller()
+            # poller.register(publisher, zmq.POLLIN)
+            print("Success!")
+            return publisher
+        except Exception as e:
+            print(f"Failed! error: {e}")
+        return None
+
+    def send_msg(self, msg):
+        print(f"Sending message: {msg} ... ", end="", flush=True)
+        rep = False
+        try:
+            self.docker_controller_socket.send_string(f"{msg}")
+            rep = self.docker_controller_socket.recv_string() == "SUCESS"
+        except zmq.ZMQError as e:
+            if e.errno == zmq.ETERM:
+                print("FAILED! error: ZMQ socket interrupted/terminated")
+            else:
+                print(f"FAILED! error: ZMQ socket error: {e}")
+        print(f"Done!") if rep == True else print("Failed!")
+        print("", end="", flush=True)
+        return rep
+
+    def start_docker(self, worklad):
+        msg = f"run:{worklad}:{self.remote_ip}:{self.remote_workload_control_port}"
+        return self.send_msg(msg)
+        
+    def stop_docker(self, worklad):
+        msg = f"stop:{worklad}"
+        return self.send_msg(msg)
+
+class RemoteWorkloadRunner:
     publisher_socket = None
-    target_runner_channel = "target"
     be_runner_channel = "miniMDock"
     lc_runner_channel = "Inference-Server"
     def __init__(
             self,
             remote_ip: str,
-            target_ip: str,
-            workload_ctrl_port: str,
+            remote_workload_control_port: str,
             client_trace_file: str
     ):
         self.remote_ip = remote_ip
-        self.target_ip = target_ip
-        self.workload_ctrl_port = workload_ctrl_port
+        self.remote_workload_control_port = remote_workload_control_port
         self.client_trace_file = client_trace_file
         self.publisher_socket = self.setup_socket()
 
@@ -24,15 +79,10 @@ class RemoteWorkloadsRunner:
         self.ctx = zmq.Context.instance()
         publisher = None
         # poller = None
-        print(f"Connecting to {self.target_ip}:{self.workload_ctrl_port}... ", end="")
+        print(f"Binding to {self.remote_ip}:{self.remote_workload_control_port}... ", end="")
         try:
             publisher = self.ctx.socket(zmq.PUB)
-            publisher.connect(f"tcp://{self.target_ip}:{self.workload_ctrl_port}")
-            # publisher.setsockopt(zmq.SUBSCRIBE, bytes(self.app_name.encode('utf-8')))
-            # publisher.setsockopt(zmq.CONFLATE, 1)
-            # print(f"(channel subscribed: {self.app_name}) ", end="")
-            # poller = zmq.Poller()
-            # poller.register(publisher, zmq.POLLIN)
+            publisher.bind(f"tcp://*:{self.remote_workload_control_port}")
             print("Success!")
             return publisher
         except Exception as e:
@@ -55,18 +105,19 @@ class RemoteWorkloadsRunner:
         return client.run(server_ip=self.target_ip)
 
     def send_msg(self, channel, msg):
-        print(f"Sending message: ({channel}): {msg} ... ", end="")
+        print(f"Sending message: {msg} ... ", end="", flush=True)
+        rep = True
         try:
-            # self.publisher_socket.send_string(channel, flags=zmq.SNDMORE)
-            self.publisher_socket.send_string(f"{channel} {msg}".encode("ascii"))
-            print(f"Done!")
+            self.publisher_socket.send_string(f"{channel} {msg}")
+            # rep = self.publisher_socket.recv_string() == "SUCESS"
         except zmq.ZMQError as e:
             if e.errno == zmq.ETERM:
-                print("ZMQ socket interrupted/terminated")
+                print("FAILED! error: ZMQ socket interrupted/terminated")
             else:
-                print(f"ZMQ socket error: {e}")
-            return False
-        return True
+                print(f"FAILED! error: ZMQ socket error: {e}")
+        print(f"Done!") if rep == True else print("Failed!")
+        print("", end="", flush=True)
+        return rep
     
     def start_wl(self, is_be_wl, args):
         channel = self.be_runner_channel if is_be_wl == True else self.lc_runner_channel
@@ -92,11 +143,3 @@ class RemoteWorkloadsRunner:
         channel = self.be_runner_channel if is_be_wl == True else self.lc_runner_channel
         msg = f"resume:{args}"
         return self.send_msg(channel, msg)
-    
-    def run_docker(self, worklad):
-        msg = f"run:{worklad}:{self.remote_ip}:{self.workload_ctrl_port}"
-        return self.send_msg(self.target_runner_channel, msg)
-        
-    def stop_docker(self, worklad):
-        msg = f"stop:{worklad}"
-        return self.send_msg(self.target_runner_channel, msg)
