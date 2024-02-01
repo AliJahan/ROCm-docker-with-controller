@@ -33,6 +33,10 @@ class RemoteExperimentRunner:
         
 
 if __name__ == "__main__":
+    import time
     remote_runner = RemoteExperimentRunner()
+    time.sleep(10)
     remote_runner.start()
+    time.sleep(3)
+    print("Done")
 #IP=`ip r | head -n 1 | awk n 1 | awk '{p`intf $3}'

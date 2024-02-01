@@ -24,10 +24,10 @@ class RemoteWorkloadsRunner:
         self.ctx = zmq.Context.instance()
         publisher = None
         # poller = None
-        print(f"Connecting {self.target_ip}:{self.workload_ctrl_port}... ", end="")
+        print(f"Connecting {self.remote_ip}:{self.workload_ctrl_port}... ", end="")
         try:
             publisher = self.ctx.socket(zmq.PUB)
-            publisher.connect(f"tcp://{self.target_ip}:{self.workload_ctrl_port}")
+            publisher.bind(f"tcp://{self.remote_ip}:{self.workload_ctrl_port}")
             # publisher.setsockopt(zmq.SUBSCRIBE, bytes(self.app_name.encode('utf-8')))
             # publisher.setsockopt(zmq.CONFLATE, 1)
             # print(f"(channel subscribed: {self.app_name}) ", end="")
