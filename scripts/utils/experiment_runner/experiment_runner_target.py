@@ -9,34 +9,32 @@ class TargetExperimentRunner:
     def __init__(
             self,
             project_root_path: str,
-            rempte_ip: str,
-            remote_port: str
+            control_port: str
         ):
         self.project_root_path = project_root_path
-        self.remote_ip = remote_ip
-        self.remote_port = remote_port
+        self.control_port = control_port
         self.subscriber_socket = self.setup_socket()
 
     def setup_socket(self):
         self.ctx = zmq.Context.instance()
-        print("Success!", flush=True)
         publisher = None
         # poller = None
-        print(f"Connecting {self.remote_ip}:{self.remote_port}... ", end="")
+        print(f"Binding localhost:{self.control_port}... ", end="")
         try:
             publisher = self.ctx.socket(zmq.SUB)
-            publisher.connect(f"tcp://{self.remote_ip}:{self.remote_port}")
             publisher.setsockopt(zmq.SUBSCRIBE, b"")
-            # publisher.setsockopt(zmq.CONFLATE, 0)
+            publisher.setsockopt(zmq.CONFLATE, 1)
+            publisher.bind(f"tcp://*:{self.control_port}")
+            
             # publisher.setsockopt(zmq.LINGER, 0)
             
             # poller = zmq.Poller()
             # poller.register(publisher, zmq.POLLIN)
             print(f"Success (channel: {self.channel_name})!")
-            return publisher
         except Exception as e:
             print(f"Failed! error: {e}")
-        return None
+        return publisher
+
     def run_docker(self, workload, remote_ip, remote_port):
         env = {
             **os.environ,
@@ -52,11 +50,11 @@ class TargetExperimentRunner:
             stdin=subprocess.PIPE,
             stderr=subprocess.PIPE
         )
+    
     def start(self):
-        
         if self.subscriber_socket is None:
             return
-        print(f"Running target experiment runner channel:{self.channel_name} ip:{self.remote_ip} port:{self.remote_port}")
+        print(f"Running target experiment runner channel:{self.channel_name} localhost:{self.control_port}")
         while True:
             msg = None
             try:
@@ -76,13 +74,14 @@ class TargetExperimentRunner:
             print(f"rcvd mesg: {msg}", flush=True)
             cmd, args = msg.split(":")
             # if cmd == "run":
-            #     workload, remote_ip, remote_port = args
-    print("done")
+            #     workload, remote_ip, target_port = args
+        print("done!!")
 
-if __name__ == "__main__":
-    remote_ip = "172.20.0.6"
-    remote_port = "4000"
+def main():
+    control_port = "4000"
     project_path = "/home/ajaha004/repos/rocr/standalone-docker/ROCm-docker-with-controller/"
-    expr_runner = TargetExperimentRunner(project_root_path=project_path, target_ip=remote_ip, target_port=remote_port)
+    expr_runner = TargetExperimentRunner(project_root_path=project_path, control_port=control_port)
     expr_runner.start()
-    print("done")
+    print("@@done")
+if __name__ == "__main__":
+    main()
