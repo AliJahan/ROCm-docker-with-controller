@@ -105,7 +105,7 @@ class RemoteWorkloadRunner:
         return client.run(server_ip=self.target_ip)
 
     def send_msg(self, channel, msg):
-        print(f"Sending message: {msg} ... ", end="", flush=True)
+        print(f"Sending message: ({channel}) {msg} ... ", end="", flush=True)
         rep = True
         try:
             self.publisher_socket.send_string(f"{channel} {msg}")

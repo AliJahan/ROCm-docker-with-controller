@@ -54,7 +54,7 @@ class RemoteExperimentRunner:
         args['gpu'] = "1"
         args['batch_size'] = "8"
         print("Starting inference server..." ,end="", flush=True)
-        print(self.workload_runner.start())
+        print(self.workload_runner.start(is_be_wl=False))
         self.wait_sec(5)
         print("Adding gpu ..." ,end="", flush=True)
         print(self.workload_runner.add_gpu(is_be_wl=False, args=args))
