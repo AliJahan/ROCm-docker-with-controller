@@ -8,6 +8,7 @@ class RemoteExperimentRunner:
     docker_runner = None
     workload_runner = None
     resource_controller = None
+    dockers_to_cleanup = list()
     def __init__(
             self,
             lc_load_trace: str = "/tmp/trace",
@@ -38,30 +39,27 @@ class RemoteExperimentRunner:
             client_trace_file=lc_load_trace
         )
     def cleanup(self):
-        print(f"Stopping power-broadcaster image on target server (just in case)", flush=True)
-        assert self.docker_runner.stop_docker("power-broadcaster") == True, "Could not stop"
+        print("Cleaning up the experiment")
+        self.docker_runner.cleanup()
 
     def setup_server(self):
         print(f"Staring power-broadcaster image on target server: {self.target_ip} ", flush=True)
         assert self.docker_runner.start_docker("power-broadcaster") == True, "Failed! stopping experiments!"
-    def wait_sec(self, wait_time_sec: int):
-        time.sleep(wait_time_sec)
     def start(self):
-        self.setup_server()
-        assert self.docker_runner.start_docker("Inference-Server")== True, "Could not start Inference-Servre"
         args = dict()
         args['model'] = "resnet152"
         args['gpu'] = "1"
         args['batch_size'] = "8"
-        print("Starting inference server..." ,end="", flush=True)
-        print(self.workload_runner.start(is_be_wl=False))
-        self.wait_sec(5)
-        print("Adding gpu ..." ,end="", flush=True)
-        print(self.workload_runner.add_gpu(is_be_wl=False, args=args))
-        self.wait_sec(5)
-        # print("Running client ..." ,end="", flush=True)
-        # print(self.workload_runner.run_lc_client())
+
+        self.setup_server()
+        assert self.docker_runner.start_docker("Inference-Server")== True, "Could not start Inference-Servre"
         
+        print("Starting inference server..." , flush=True)
+        print(self.workload_runner.start(is_be_wl=False))
+        print("Adding gpu ..." , flush=True)
+        print(self.workload_runner.add_gpu(is_be_wl=False, args=args))
+        self.cleanup()
+
     def __del__(self):
         self.cleanup()
 

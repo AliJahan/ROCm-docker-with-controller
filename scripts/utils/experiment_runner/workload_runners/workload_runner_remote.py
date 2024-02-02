@@ -1,10 +1,13 @@
 import zmq
+import time
 from .lc_runner.lc_client_runner import LCClientRunnerWarpper
 from .lc_runner.lc_client_runner import LCClientRunnerWarpper
 
 class RemoteDockerRunner:
+    SLEEP_AFTER_SEND_MSG_SEC = 5
     docker_controller_socket = None
     remote_header = "remote_docker_runner"
+    dockers_to_cleanup = list()
     def __init__(
             self,
             remote_ip: str,
@@ -45,22 +48,41 @@ class RemoteDockerRunner:
             rep = self.docker_controller_socket.recv_string() == "SUCESS"
         except zmq.ZMQError as e:
             if e.errno == zmq.ETERM:
-                print("FAILED! error: ZMQ socket interrupted/terminated")
+                print("FAILED! error: ZMQ socket interrupted/terminated", flush=True)
             else:
-                print(f"FAILED! error: ZMQ socket error: {e}")
-        print(f"Done!") if rep == True else print("Failed!")
-        print("", end="", flush=True)
+                print(f"FAILED! error: ZMQ socket error: {e}", flush=True)
+
+        if rep == True:
+            time.sleep(self.SLEEP_AFTER_SEND_MSG_SEC)
+            print(f"Done!") 
+
         return rep
 
-    def start_docker(self, worklad):
-        msg = f"run:{worklad}:{self.remote_ip}:{self.remote_workload_control_port}"
-        return self.send_msg(msg)
+    def start_docker(self, workload):
+        msg = f"run:{workload}:{self.remote_ip}:{self.remote_workload_control_port}"
+        ret = self.send_msg(msg)
+        if ret == True:
+            if workload not in self.dockers_to_cleanup:
+                self.dockers_to_cleanup.append(workload)
+        return ret
         
-    def stop_docker(self, worklad):
-        msg = f"stop:{worklad}"
-        return self.send_msg(msg)
+    def stop_docker(self, workload):
+        msg = f"stop:{workload}"
+        ret = self.send_msg(msg)
+        if ret == True:
+            if workload in self.dockers_to_cleanup:
+                self.dockers_to_cleanup.remove(workload)
+        return ret
+    def cleanup(self):
+        if len(self.dockers_to_cleanup) == 0:
+            return
+        for docker in self.dockers_to_cleanup:
+            self.stop_docker(docker)
+    def __del__(self):
+        self.cleanup()
 
 class RemoteWorkloadRunner:
+    SLEEP_AFTER_SEND_MSG_SEC = 5
     publisher_socket = None
     be_runner_channel = "miniMDock"
     lc_runner_channel = "Inference-Server"
@@ -108,15 +130,19 @@ class RemoteWorkloadRunner:
         print(f"Sending message: ({channel}) {msg} ... ", end="", flush=True)
         rep = True
         try:
-            self.publisher_socket.send_string(f"{channel} {msg}")
+            self.publisher_socket.send_string(f"{channel}", flags=zmq.SNDMORE)
+            self.publisher_socket.send_string(f"{msg}")
             # rep = self.publisher_socket.recv_string() == "SUCESS"
         except zmq.ZMQError as e:
             if e.errno == zmq.ETERM:
-                print("FAILED! error: ZMQ socket interrupted/terminated")
+                print("FAILED! error: ZMQ socket interrupted/terminated", flush=True)
             else:
-                print(f"FAILED! error: ZMQ socket error: {e}")
-        print(f"Done!") if rep == True else print("Failed!")
-        print("", end="", flush=True)
+                print(f"FAILED! error: ZMQ socket error: {e}", flush=True)
+        
+        if rep == True:
+            time.sleep(self.SLEEP_AFTER_SEND_MSG_SEC)
+            print(f"Done!") 
+
         return rep
     def get_channel(self, is_be_wl):
         return self.be_runner_channel if is_be_wl == True else self.lc_runner_channel
