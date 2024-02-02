@@ -22,5 +22,8 @@ RUN cd /workloads/miniMDock/ \
 
 COPY ../scripts/utils/experiment_runner/workload_runners /workload_runner
 
+RUN cd /workload_runner/ \
+    && pip3 install -r requirements.txt
+
 # Start controller service () then keep container running for debug porposes
 ENTRYPOINT printf "Controller address: " && ip r | head -n 1 | awk '{printf $3}' && printf ":9090\n" && /tmp/controller/scripts/start_service.sh && python3 /workload_runner/workload_runner_target.py

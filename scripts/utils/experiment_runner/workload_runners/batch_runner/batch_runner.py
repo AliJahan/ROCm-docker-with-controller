@@ -175,43 +175,52 @@ class BatchRemoteRunner:
                 # It should not be None here (just in case)
                 if msg is None:
                     continue
+                print(f"BERunner recvd: {msg}")
                 splitted = msg.split(":")
                 cmd, args = splitted[0], splitted[1:]
-                if cmd == "start": #start:gpus (1:2...) no trailing :
-                    gpus = args
-                    for gpu in gpus:
-                        if gpu in self.be_runners == False:
-                            self.be_runners[gpu] = BatchRunner()
-                            self.be_runners[gpu].run(gpu)
-                        else:
-                            print("be_runner already running, ignoring msg", flush=True)
+                if cmd == "start": #start:
+                    continue
+                if cmd == "add_gpu": #add_gpu:gpu
+                    gpu = args[0]
+                    if gpu in self.be_runners == False:
+                        self.be_runners[gpu] = BatchRunner()
+                        self.be_runners[gpu].run(gpu)
+                    else:
+                        print("be_runner already running, ignoring msg", flush=True)
+                if cmd == "remove_gpu": #remove_gpu:gpu
+                    gpu = args[0]
+                    if gpu in self.be_runners == False:
+                        out = self.be_runners[gpu].terminate(gpu)
+                        del self.be_runners[gpu]
+                        self.be_runners_stats[gpu] = out
+                    else:
+                        print(f"be_runner does not have be running on gpu {gpu}, ignoring msg", flush=True)
                 
-                elif cmd == "pause": #pause:gpus (1:2...) no trailing :
-                    gpus= args
-                    for gpu in gpus:
-                        if gpu in self.be_runners:
-                            self.be_runners[gpu].suspend()
-                        else:
-                            print("be_runner is not running, ignoring msg", flush=True)
-                elif cmd == "resume": #resume:gpus (1:2...) no trailing :
-                    gpus= args
-                    for gpu in gpus:
-                        if gpu in self.be_runners:
-                            self.be_runners[gpu].resume()
-                        else:
-                            print("be_runner is not running, ignoring msg", flush=True)
+                elif cmd == "pause_gpu": #pause_gpu:gpu
+                    gpu= args[0]
+                    if gpu in self.be_runners:
+                        self.be_runners[gpu].suspend()
+                    else:
+                        print(f"be_runner does not have be running on gpu {gpu}, ignoring msg", flush=True)
+                elif cmd == "resume_gpu": #resume_gpu:gpu
+                    gpu= args[0]
+                    if gpu in self.be_runners:
+                        self.be_runners[gpu].resume()
+                    else:
+                        print(f"be_runner does not have be running on gpu {gpu}, ignoring msg", flush=True)
                 
-                elif cmd == "stop": #stop:gpus (1:2...) no trailing :
+                elif cmd == "stop": #stop:stat_file
+                    stat_file_name = args[0]
                     if len(self.be_runners) > 0:
                         for gpu in self.be_runners:
                             out = self.be_runners[gpu].terminate()
                             del self.be_runners[gpu]
                             self.be_runners_stats[gpu] = out
-                elif cmd == "finish": #finish:stat_file_name
-                    stat_file_name = args[0]
-                    self.dump_stats(stat_file_name)
-                    print(f"received finish command, shutting down", flush=True)
-                    break
+                        self.dump_stats(stat_file_name)
+                        break
+                    else:
+                        print(f"be_runner does not have any be running processes, ignoring msg", flush=True)
+
                 else:
                     print(f"received unsupported command: {msg}", flush=True)
 

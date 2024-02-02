@@ -8,7 +8,7 @@ import math
 import numpy as np
 import zmq
 
-from lc_controller import LCController
+from lc_runner.lc_controller import LCController
 
 class LCServerRunner:
     trace_file = ""
@@ -101,14 +101,19 @@ class LCServerRunner:
 class LCServerRunnerWrapper:
     server_cmd = "/workloads/Inference-server/build/bin/server -m /workloads/model_repo/ -e"
     server_runner = None
-    def start_server(self, model: str = "resnet152", gpus: int = 1, batch_size: int = 8):
+    def start_server(self):
         if self.server_runner is not None:
             self.server_runner.stop()
-        self.server_runner = LCServerRunner(True)
-        self.server_runner.run_server(self.server_cmd)
-        for i in range(gpus):
-            self.server_runner.configure_server(model, i, batch_size)
-            self.server_runner.add_worker(model, i)
+        if self.server_runner is None:
+            self.server_runner = LCServerRunner(True)
+            self.server_runner.run_server(self.server_cmd)
+
+    def add_gpu(self, model, gpu, batch_size):
+            self.server_runner.configure_server(model, gpu, batch_size)
+            self.server_runner.add_worker(model, gpu)
+
+    def remove_gpu(self, model, gpu):
+            self.server_runner.remove_worker(model, gpu)
 
     def stop_server(self):
         if self.server_runner is not None:
@@ -171,23 +176,36 @@ class LCRemoteRunner:
                 # It should not be None here (just in case)
                 if msg is None:
                     continue
+
+                print(f"LCRunner recvd: {msg}")
                 splitted = msg.split(":")
                 cmd, args = splitted[0], splitted[1:]
-                if cmd == "start": #start:model:gpus:batch_size
-                    model, gpus, batch_size = args
+                if cmd == "start": #start:
                     if self.lc_runner is None:
                         self.lc_runner = LCServerRunnerWrapper()
-                        self.lc_runner.start_server(model=model, gpus=gpus, batch_size=batch_size)
+                        self.lc_runner.start_server()
                     else:
                         print("lc_runner already running, ignoring msg", flush=True)
-                
-                elif cmd == "pause": #pause:model:gpu
+
+                elif cmd == "add_gpu": #add_gpu:model:gpu:batch_size
+                    model, gpu, batch_size = args
+                    if self.lc_runner is not None:
+                        self.lc_runner.add_gpu(model=model, gpu=gpu, batch_size=batch_size)
+                    else:
+                        print("lc_runner is not running, ignoring msg", flush=True)
+                elif cmd == "remove_gpu": #remove_gpu:model:gpu
+                    model, gpu = args
+                    if self.lc_runner is not None:
+                        self.lc_runner.remove_gpu(model=model, gpu=gpu)
+                    else:
+                        print("lc_runner is not running, ignoring msg", flush=True)
+                elif cmd == "pause_gpu": #pause_gpu:model:gpu
                     model, gpus= args
                     if self.lc_runner is not None:
                         self.lc_runner.pause_worker(model=model, gpus=gpus)
                     else:
                         print("lc_runner is not running, ignoring msg", flush=True)
-                elif cmd == "resume": #pause:model:gpu
+                elif cmd == "resume_gpu": #pause_gpu:model:gpu
                     model, gpus= args
                     if self.lc_runner is not None:
                         self.lc_runner.resume_worker(model=model, gpus=gpus)
@@ -198,12 +216,11 @@ class LCRemoteRunner:
                     if self.lc_runner is not None:
                         self.lc_runner.stop_server()
                         self.lc_runner = None
-                elif cmd == "finish":
-                    print(f"received finish command, shutting down", flush=True)
+                    print(f"received stop command, shutting down", flush=True)
                     break
+
                 else:
                     print(f"received unsupported command: {msg}", flush=True)
-
 
         if self.lc_runner is not None:
             self.lc_runner.stop_server()

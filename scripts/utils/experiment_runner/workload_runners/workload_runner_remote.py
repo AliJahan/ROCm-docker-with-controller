@@ -118,28 +118,58 @@ class RemoteWorkloadRunner:
         print(f"Done!") if rep == True else print("Failed!")
         print("", end="", flush=True)
         return rep
-    
-    def start_wl(self, is_be_wl, args):
-        channel = self.be_runner_channel if is_be_wl == True else self.lc_runner_channel
-        msg = f"start:{args}"
+    def get_channel(self, is_be_wl):
+        return self.be_runner_channel if is_be_wl == True else self.lc_runner_channel
+
+    def start(self, is_be_wl):
+        channel = self.get_channel(is_be_wl=is_be_wl)
+        msg = f"start:"
+        return self.send_msg(channel, msg)
+
+    def add_gpu(self, is_be_wl, args):
+        msg = f"add_gpu:"
+        if is_be_wl:
+            msg += args["gpu"]
+        else:
+            msg += args['model']+":"+args['gpu']+":"+args['batch_size']
+
+        channel = self.get_channel(is_be_wl=is_be_wl)
         return self.send_msg(channel, msg)
     
-    def pause_wl(self, is_be_wl, args):
-        channel = self.be_runner_channel if is_be_wl == True else self.lc_runner_channel
-        msg = f"pause:{args}"
+    def pause_gpu(self, is_be_wl, args):
+        msg = f"pause_gpu:"
+        if is_be_wl:
+            msg += args["gpu"]
+        else:
+            msg += args['model']+":"+args['gpu']
+
+        channel = self.get_channel(is_be_wl=is_be_wl)
         return self.send_msg(channel, msg)
     
-    def stop_wl(self, is_be_wl, args):
-        channel = self.be_runner_channel if is_be_wl == True else self.lc_runner_channel
-        msg = f"stop:{args}"
+    def remove_gpu(self, is_be_wl, args):
+        msg = f"remove_gpu:"
+        if is_be_wl:
+            msg += args["gpu"]
+        else:
+            msg += args['model']+":"+args['gpu']
+        
+        channel = self.get_channel(is_be_wl=is_be_wl)
         return self.send_msg(channel, msg)
     
     def finsh_wl(self, is_be_wl, args):
-        channel = self.be_runner_channel if is_be_wl == True else self.lc_runner_channel
-        msg = f"finish:{args}"
+        msg = f"stop:"
+        if is_be_wl:
+            msg += args['stat_file']
+
+        channel = self.get_channel(is_be_wl=is_be_wl)
         return self.send_msg(channel, msg)
     
-    def resume_wl(self, is_be_wl, args):
-        channel = self.be_runner_channel if is_be_wl == True else self.lc_runner_channel
-        msg = f"resume:{args}"
+    def resume_gpu(self, is_be_wl, args):
+        msg = f"resume_gpu:"
+        if is_be_wl:
+            msg += args['gpu']
+        else:
+            msg += args['model']+":"+args['gpu']
+
+        channel = self.get_channel(is_be_wl=is_be_wl)
         return self.send_msg(channel, msg)
