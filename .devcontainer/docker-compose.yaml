@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   experiment-runner:
-    image: experiment-runner-ubuntu20.04:latest
+    image: experiment-runner:latest
     build:
       context: ..
       dockerfile: ./.devcontainer/Dockerfile.experiment-runner-ubuntu20.04

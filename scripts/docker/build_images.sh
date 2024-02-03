@@ -9,4 +9,4 @@ fi
 if [ $1 = "Inference-Server" ]; then
 echo "Cloning workloads into /workloads/ ..." && bash ${PROJECT_ROOT}/workloads/clone_workloads.sh ${PROJECT_ROOT}/workloads/
 fi
-echo "Building Image: $1 ..." && cd ${PROJECT_ROOT}/.devcontainer/ && docker compose build $1  --no-cache  --progress plain &> ${LOGS_DIR}/$(date -I'minutes')$1_build.log && cd ${PROJECT_ROOT}/scripts/docker && printf "\r\rDONE\n"
+echo "Building Image: $1 ..." && cd ${PROJECT_ROOT}/.devcontainer/ && docker compose build $1  --progress plain &> ${LOGS_DIR}/$(date -I'minutes')$1_build.log && cd ${PROJECT_ROOT}/scripts/docker && printf "\r\rDONE\n"

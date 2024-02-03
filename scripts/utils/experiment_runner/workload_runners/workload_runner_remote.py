@@ -89,10 +89,12 @@ class RemoteWorkloadRunner:
     def __init__(
             self,
             remote_ip: str,
+            target_ip: str,
             remote_workload_control_port: str,
             client_trace_file: str
     ):
         self.remote_ip = remote_ip
+        self.target_ip = target_ip
         self.remote_workload_control_port = remote_workload_control_port
         self.client_trace_file = client_trace_file
         self.publisher_socket = self.setup_socket()
@@ -113,8 +115,8 @@ class RemoteWorkloadRunner:
 
     def run_lc_client(self, warmp_first, gpus, max_rps_per_gpu, trace_unit_sec):
         client = LCClientRunnerWarpper(
-            num_warmpup_load_steps=3,
-            warmup_step_duration_sec=10,
+            num_warmpup_load_steps=4,
+            warmup_step_duration_sec=60,
             trace_file=self.client_trace_file,
             gpus=gpus,
             max_rps_per_gpu=max_rps_per_gpu,
