@@ -43,6 +43,8 @@ class RemoteExperimentRunner:
         )
     def cleanup(self):
         print("Cleaning up the experiment")
+        if self.power_collector is not None:
+            del self.power_collector
         self.docker_runner.cleanup()
 
     def setup_server(self):
@@ -59,9 +61,7 @@ class RemoteExperimentRunner:
 
     def stop_power_collection(self):
         assert self.power_collector is not None, "power collector is not running"
-
         power = self.power_collector.get_all_powers()
-        print(power)
         del self.power_collector
         self.power_collector = None
         return power
