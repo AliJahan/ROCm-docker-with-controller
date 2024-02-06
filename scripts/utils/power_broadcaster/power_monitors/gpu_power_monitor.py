@@ -65,7 +65,7 @@ class GPUPowerMonitor(threading.Thread):
         if self.driverInitialized() is True:
             ret_init = rocmsmi.rsmi_init(0)
             if ret_init != 0:
-                print(f'ROCm SMI returned {ret_init} (the expected value is 0)')
+                print(f'ROCm SMI returned {ret_init} (the expected value is 0)', flush=True)
                 exit(ret_init)
             numberOfDevices = c_uint32(0)
             ret = rocmsmi.rsmi_num_monitor_devices(byref(numberOfDevices))
@@ -75,7 +75,7 @@ class GPUPowerMonitor(threading.Thread):
             else:
                 return False
         else:
-            print('Driver not initialized (amdgpu not found in modules)')
+            print('Driver not initialized (amdgpu not found in modules)', flush=True)
             return False
 
         return True
@@ -94,6 +94,7 @@ class GPUPowerMonitor(threading.Thread):
             for i in range(self.num_gpus):
                 gpu_pow = int(self.get_cur_power(i))
                 if gpu_pow == -1: # just in case rocm-smi give error
+                    print("Could not get power from rocm-smi", flush=True)
                     break
                 power[str(i)] = gpu_pow
             # calc. avg. and update    

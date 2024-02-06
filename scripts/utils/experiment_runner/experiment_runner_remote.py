@@ -142,8 +142,9 @@ class RemoteExperimentRunner:
             trace_files_map[load_pct] = file_name
         
         print("Setting up target server ... ")
-        self.setup_server()
-        for round in range(3):
+        
+        for round in range(1, 3):
+            self.setup_server()
             results_file = f"{self.RESULTS_DIR}/lc_sweep_gpus{num_gpus}_lstep{lc_load_steps}_maxloadrps{expr_max_rps_per_gpu}_round{round}"
             print("Collecting idle powers:")
             self.start_power_collection()
@@ -206,7 +207,7 @@ class RemoteExperimentRunner:
                     print(f"---------------------------------------" , flush=True)
                 print("4-Stopping Inference-Server service ... " , flush=True)
                 assert self.docker_runner.stop_docker("Inference-Server")== True, "Could not stop Inference-Servre service"
-        self.cleanup()
+            self.cleanup()
 
     def __del__(self):
         self.cleanup()
