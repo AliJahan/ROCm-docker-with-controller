@@ -1,4 +1,5 @@
 import time
+import os
 from power_collector.power_collector import PowerCollector
 from workload_runners.workload_runner_remote import RemoteDockerRunner, RemoteWorkloadRunner
 
@@ -78,8 +79,24 @@ class RemoteExperimentRunner:
         expr_warmup_step_duration_sec=60
         expr_max_rps_per_gpu=100
         expr_trace_unit_sec=60
-        
+        def read_performed_expers(file_name):
+            data = list()
+            if os.path.isfile(file_name) == False:
+                return data
+            
+            round = str(file_name.split("round")[-1])
+            f = open(file_name, 'r')
+            lines = f.readlines()
+            f.close()
+            
+            for line in lines[1:]:
+                line_d = line.split(",")
+                data.append((int(round), int(line_d[0]), int(line_d[1])))
+            print(f"Found {len(data)} experiments from previous run to skip!", flush=True)
+            return data
         def save_results(gpu, load_pct, load_rps, powers, qos, results_file, create = False):
+            if os.path.isfile(results_file) and create:
+                create = False
             fd = open(results_file, 'w' if create else 'a')
             # 'num_samples': 480, 'sample_interval': 1
             cpu_avg = 0.0
@@ -135,7 +152,7 @@ class RemoteExperimentRunner:
         print(f"Creating LC load trace file with {lc_load_steps}% steps ...", flush=True)
         
         for load_pct in range(lc_load_steps, 101, lc_load_steps):
-            file_name = f'{self.LOGS_DIR}/lc_trace_file_load_{load_pct}_steps_{lc_load_steps}_pct'
+            file_name = f'{self.LOGS_DIR}/lc_trace_file_load{load_pct}pct_steps{lc_load_steps}pct'
             trace_file = open(file_name, 'w')
             trace_file.write(f"{load_pct}\n")
             trace_file.close()
@@ -146,6 +163,7 @@ class RemoteExperimentRunner:
         for round in range(1, 3):
             self.setup_server()
             results_file = f"{self.RESULTS_DIR}/lc_sweep_gpus{num_gpus}_lstep{lc_load_steps}_maxloadrps{expr_max_rps_per_gpu}_round{round}"
+            prev_expr = read_performed_expers(results_file)
             print("Collecting idle powers:")
             self.start_power_collection()
             time.sleep(30)
@@ -158,10 +176,17 @@ class RemoteExperimentRunner:
                 results_file=results_file,
                 create=True
             )
-        
-        
-            for gpu in range(num_gpus, num_gpus+1):
+               
+            gpu = num_gpus
+            while gpu < num_gpus+1:
                 print(f"Profiling power and QoS of Inference server with gpus:{gpu}" , flush=True)
+                trace_files_map_currected = dict()
+                for load_pct in trace_files_map:
+                    if (int(round), int(gpu), int(load_pct)) in prev_expr:
+                        print(f"\t-Skipping experiment for round:{round} gpu:{gpu} load:{load_pct}", flush=True)
+                        continue
+                    trace_files_map_currected[load_pct] = trace_files_map[load_pct]
+
                 print("1-Starting Inference-Server service ... " , flush=True)
                 assert self.docker_runner.start_docker("Inference-Server")== True, f"Could not start Inference-Server service for gpu: {gpu}"
                 print("2-Starting inference server... " , flush=True)
@@ -170,18 +195,21 @@ class RemoteExperimentRunner:
                     args['gpu'] = str(g)
                     print(f"\t2.1- Adding gpu {g}..." , flush=True)
                     assert self.workload_runner.add_gpu(is_be_wl=False, args=args), f"Could not add gpu {g} to inference server"
-                # warmup
+                # Warmup
+                warmup_trace = trace_files_map_currected[list(trace_files_map_currected.keys())[0]]
+                print(f"\t2.2-warming up with trace: {warmup_trace}" , flush=True)
                 self.workload_runner.run_lc_client(
                     warmp_first=True,
                     num_warmpup_load_steps=expr_num_warmpup_load_steps,
                     warmup_step_duration_sec=expr_warmup_step_duration_sec,
                     gpus=gpu,
                     max_rps_per_gpu=expr_max_rps_per_gpu,
-                    trace_file=trace_files_map[lc_load_steps],
+                    trace_file=warmup_trace,
                     trace_unit_sec=expr_trace_unit_sec
                 )
-                for load_pct in trace_files_map:
-                    print(f"3-Running client with load {load_pct}%" , flush=True)
+                FAILED = False
+                for load_pct in trace_files_map_currected:
+                    print(f"3-Running client with load {load_pct}% trace:{trace_files_map_currected[load_pct]}" , flush=True)
                     self.start_power_collection()
                     qos_data = self.workload_runner.run_lc_client(
                         warmp_first=False,
@@ -189,11 +217,16 @@ class RemoteExperimentRunner:
                         warmup_step_duration_sec=expr_warmup_step_duration_sec,
                         gpus=gpu,
                         max_rps_per_gpu=expr_max_rps_per_gpu,
-                        trace_file=trace_files_map[load_pct],
+                        trace_file=trace_files_map_currected[load_pct],
                         trace_unit_sec=expr_trace_unit_sec
                     )
                     lc_powers = self.stop_power_collection()
+                    if qos_data is None:
+                        print(f"Error happened for running client for trace:{load_pct}%. Restarting..." , flush=True)    
+                        FAILED = True
+                        break
                     print(f"3-Saving power and qos for load {load_pct}%" , flush=True)
+
                     rps = int((float(load_pct) / 100.0) * num_gpus * expr_max_rps_per_gpu)
                     save_results(
                         gpu=gpu,
@@ -207,6 +240,8 @@ class RemoteExperimentRunner:
                     print(f"---------------------------------------" , flush=True)
                 print("4-Stopping Inference-Server service ... " , flush=True)
                 assert self.docker_runner.stop_docker("Inference-Server")== True, "Could not stop Inference-Servre service"
+                if FAILED == False:
+                    gpu += 1
             self.cleanup()
 
     def __del__(self):
@@ -216,7 +251,7 @@ if __name__ == "__main__":
     import time
     remote_runner = RemoteExperimentRunner()
     for gpu in range(1, 9):
-        remote_runner.run_lc_sweep_gpu_experiment(lc_load_steps=1, num_gpus=gpu)
+        remote_runner.run_lc_sweep_gpu_experiment(lc_load_steps=2, num_gpus=gpu)
     print("Done with experiment waiting 10 sec")
     time.sleep(10)
 

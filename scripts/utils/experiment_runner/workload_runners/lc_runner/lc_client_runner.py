@@ -24,6 +24,7 @@ class LCClientRunner:
         self.proc = None
         self.debug = debug
         self.max_rps_per_gpu = max_rps_per_gpu
+        self.wait_for_client_sec = 0
         if trace_unit_sec < 0 or trace_unit_sec > 60:
             print(f"\t- [Client runner] Got {trace_unit_sec} as trace time unit. Using default (=60 sec)")
             trace_unit_sec = 60
@@ -38,6 +39,7 @@ class LCClientRunner:
         
         for line in data:
             load_lst += f"{trace_unit},{int((float(line) / 100.0) * num_gpus * per_gpu_max_rps)}\n"
+            self.wait_for_client_sec += self.trace_unit_sec
         # Save converted load(%) to RPS
         tmp_trace_name = workload_trace + f"_converted_{num_gpus}GPUs_{per_gpu_max_rps}maxRPSPerGPU"
         f = open(tmp_trace_name, 'w')
@@ -57,10 +59,25 @@ class LCClientRunner:
             stdin=subprocess.PIPE,
             stderr=subprocess.PIPE
         )
-        out, err = p.communicate()
+        
         # wait to finish
         print("Done! ", flush=True)
+        print(f"\t- [Client runner] sleeping for {self.wait_for_client_sec} sec.", flush=True)
+        
+        time.sleep(self.wait_for_client_sec)
+        print(f"\t- [Client runner] checking if client process is done ... ", flush=True, end="")
+        if p.poll() is None:
+            print(f"No (retrying in 60 sec) ... ", flush=True, end="")
+            time.sleep(60)
+        print(f"Done!", flush=True)
+        
+        # check for client
+        if p.poll() is None:
+            print(f"\t- [Client runner] ERROR client process not responsding!", flush=True)
+            return None
+        
         p.wait()
+        out, err = p.communicate()
         # print(out.decode())
         # print("Client done! ", flush=True)
         # parse client output and return rps and power
