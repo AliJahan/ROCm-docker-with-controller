@@ -24,11 +24,11 @@ class LCClientRunner:
         self.proc = None
         self.debug = debug
         self.max_rps_per_gpu = max_rps_per_gpu
-        self.wait_for_client_sec = 0
         if trace_unit_sec < 0 or trace_unit_sec > 60:
             print(f"\t- [Client runner] Got {trace_unit_sec} as trace time unit. Using default (=60 sec)")
             trace_unit_sec = 60
         self.trace_unit_sec = trace_unit_sec
+        self.wait_for_client_sec = max(5, int(0.1*self.trace_unit_sec)) # 10% more sleep time for client
         self.trace_file = self.process_workload_trace(trace_file, max_rps_per_gpu, trace_unit_sec, gpus)
         
     def process_workload_trace(self, workload_trace: str, per_gpu_max_rps: float, trace_unit: int, num_gpus: int):

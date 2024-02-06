@@ -2,6 +2,9 @@
 #include <atomic>
 #include <thread>
 #include <cassert>
+#include <string>
+#include <sstream>
+#include <vector>
 #include <zmq.h>
 #include <zmq_addon.hpp>
 
@@ -66,12 +69,13 @@ public:
 
     friend std::ostream& operator<<(std::ostream& os, struct Control::Controller::control_msg_t const& m);
 
-    Controller(std::string port_str): 
+    Controller(std::string contoller_remote_ip, std::string contoller_remote_port, std::string app_name): 
         ctx_(1),
         socket_ptr_(nullptr),
-        control_socket_address_(
-            "tcp://0.0.0.0:"+port_str
+        control_address(
+            "tcp://"+contoller_remote_ip+":"+contoller_remote_port
         ),
+        app_name(app_name),
         smi_initted_(false),
         num_gpus_(0U),
         shm_(nullptr),
@@ -95,6 +99,7 @@ private:
     void deinit_shm();
     bool init_zmq();
     void deinit_zmq();
+    void split_string(const std::string &s, char delim, std::vector<std::string> results);
     inline uint32_t count_set_bits(uint32_t n); // utility
     std::string uint2hexstr(uint32_t num); //utility
     zmq::message_t get_command();
@@ -110,8 +115,9 @@ private:
     zmq::socket_t* socket_ptr_;
     std::atomic_bool zmq_initted_;
     std::atomic_bool smi_initted_;
-    std::string control_socket_address_;
     std::atomic_bool running_;
     std::thread* thread_;
+    std::string control_address;
+    std::string app_name;
 };
 }

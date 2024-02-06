@@ -27,10 +27,10 @@ target_sources(controller PUBLIC ${SRCS})
 target_compile_definitions(controller PRIVATE CONTROL_PORT="${CONTROL_PORT}" DEBUG_MODE=${DEBUG_MODE})
 set_target_properties(controller PROPERTIES CXX_STANDARD 17)
 target_link_libraries(controller PUBLIC -lrt pthread zmq ${ROCM_SMI_LIB_DIR}/librocm_smi64.so)
-set_target_properties(controller PROPERTIES RUNTIME_OUTPUT_DIRECTORY "/usr/local/bin/")
+#set_target_properties(controller PROPERTIES RUNTIME_OUTPUT_DIRECTORY "/usr/local/bin/")
 # for local test uncomment lines #30 and uncomment below lines
 # installs controller binary in build dir
-#set_target_properties(controller PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+set_target_properties(controller PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 # compiles master (communication with controller outside container) and installs it binary in build dir
 add_executable(master src/master.cpp)
 target_link_libraries(master PUBLIC -lrt pthread zmq)

@@ -123,17 +123,16 @@ namespace Control{
         }
 
         try{
-  	        socket_ptr_ = new zmq::socket_t(ctx_, zmq::socket_type::router);
-            uint32_t id_int = 112; //TODO
-            std::string id(std::to_string(id_int));
+  	        socket_ptr_ = new zmq::socket_t(ctx_, zmq::socket_type::sub);
             // std::string id("power");
-            zmq_setsockopt(*socket_ptr_, ZMQ_SUBSCRIBE, id.c_str(), id.size());
-            uint32_t msg_to_keep = 2;
-            zmq_setsockopt(*socket_ptr_, ZMQ_CONFLATE, &msg_to_keep, sizeof(uint32_t));
-            socket_ptr_->bind(control_socket_address_);
+            zmq_setsockopt(*socket_ptr_, ZMQ_SUBSCRIBE, app_name.c_str(), app_name.size());
+            // uint32_t msg_to_keep = 2;
+            // zmq_setsockopt(*socket_ptr_, ZMQ_CONFLATE, &msg_to_keep, sizeof(uint32_t));
+            socket_ptr_->connect(control_address);
         }
         catch(...){
             std::cout << "Controller failed to init zmq\n" << std::flush;
+            return false;
         }
         #if DEBUG_MODE
             PRINT(get_cur_time_str()+" @Controller::init_zmq", "initting zmq DONE");
@@ -272,21 +271,24 @@ namespace Control{
             PRINT(get_cur_time_str()+" @Controller::run", "stopped@run");
         #endif
     }
+    void Controller::split_string(const std::string &s, char delim, std::vector<std::string> results) {
+        std::istringstream iss(s);
+        std::string item;
+        while (std::getline(iss, item, delim)) {
+            *result++ = item;
+        }
+    }
     // Reads the command(zmq_msg) data from socket
     zmq::message_t Controller::get_command(){
         #if DEBUG_MODE
             PRINT(get_cur_time_str()+" @Controller::get_command", "getting command");
         #endif
-        std::string rep_str("success");
-        zmq::message_t reply(rep_str.c_str(), rep_str.size());
-        zmq::message_t id;
+        zmq::message_t header;
         zmq::message_t msg;
-        zmq::recv_result_t rcv_result = socket_ptr_->recv(id);
+        zmq::recv_result_t rcv_result = socket_ptr_->recv(header);
         assert(rcv_result && "Controller: getting id from socket rcv failed\n");
         rcv_result = socket_ptr_->recv(msg);
         assert(rcv_result && "Controller: getting msg from socket rcv failed\n");
-        socket_ptr_->send(id, zmq::send_flags::sndmore);
-        socket_ptr_->send(reply, zmq::send_flags::dontwait);
         #if DEBUG_MODE
             PRINT(get_cur_time_str()+" @Controller::get_command", "GOT command");
         #endif
@@ -297,23 +299,25 @@ namespace Control{
         #if DEBUG_MODE
             PRINT(get_cur_time_str()+" @Controller::apply_command", "applying command");
         #endif
-        Control::Controller::control_msg_t* control_msg_ptr = msg.data<Control::Controller::control_msg_t>();
-        std::cout << get_cur_time_str() << " <CMD_RECVD> " << control_msg_ptr << std::endl << std::flush;
-        switch (control_msg_ptr->command_type) {
-            case Control::Controller::command_t::SET_FREQ :
-                set_freq(control_msg_ptr->gpu_ind, control_msg_ptr->value1);
-                break;
-            case Control::Controller::command_t::RESET_FREQ :
-                set_freq(control_msg_ptr->gpu_ind, 225U);
-                break;
-            case Control::Controller::command_t::SET_CUMASK :
-                set_cus(control_msg_ptr->gpu_ind, control_msg_ptr->value1, control_msg_ptr->value2);
-                break;
-            case Control::Controller::command_t::RESET_CUMASK :
-                set_cus(control_msg_ptr->gpu_ind, 0xffffffff, 0xfffffff);
-                break;
-            default:
-                break;
+        std::string control_msg_str(msg.data<char>(), msg.size());
+        std::cout << get_cur_time_str() << " <CMD_RECVD> " << control_msg_str << std::endl << std::flush;
+        std::vector<std::string> splited;
+        split_string(control_msg_str, ':', splited);
+        std::string& cmd = splited[0];
+        uint32_t gpu_ind = std::soti(splited[1]);
+        if (cmd == "SET_FREQ")
+                set_freq(gpu_ind, control_msg_ptr->value1);
+        else if(cmd == "RESET_FREQ")
+            set_freq(gpu_ind, 225U);
+        else if(cmd == "SET_CUMASK"){
+            uint32_t mask0 = std::stoi(splited[2]);
+            uint32_t mask1 = std::stoi(splited[3]);
+            set_cus(gpu_ind, value1, value2);
+        }
+        else if(cmd == "RESET_CUMASK")
+                set_cus(gpu_ind, 0xffffffff, 0xfffffff);
+        else{
+            PRINT(get_cur_time_str()+" @Controller::apply_command", "invalid cmd");
         }
         #if DEBUG_MODE
             PRINT(get_cur_time_str()+" @Controller::apply_command", "applying command DONE");
