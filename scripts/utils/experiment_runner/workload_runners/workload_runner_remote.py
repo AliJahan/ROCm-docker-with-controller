@@ -91,12 +91,10 @@ class RemoteWorkloadRunner:
             remote_ip: str,
             target_ip: str,
             remote_workload_control_port: str,
-            client_trace_file: str
     ):
         self.remote_ip = remote_ip
         self.target_ip = target_ip
         self.remote_workload_control_port = remote_workload_control_port
-        self.client_trace_file = client_trace_file
         self.publisher_socket = self.setup_socket()
 
     def setup_socket(self):
@@ -113,11 +111,11 @@ class RemoteWorkloadRunner:
             print(f"Failed! error: {e}")
         return None
 
-    def run_lc_client(self, warmp_first, gpus, max_rps_per_gpu, trace_unit_sec):
+    def run_lc_client(self, warmp_first, num_warmpup_load_steps, warmup_step_duration_sec, gpus, max_rps_per_gpu, trace_file, trace_unit_sec):
         client = LCClientRunnerWarpper(
-            num_warmpup_load_steps=4,
-            warmup_step_duration_sec=60,
-            trace_file=self.client_trace_file,
+            num_warmpup_load_steps=num_warmpup_load_steps,
+            warmup_step_duration_sec=warmup_step_duration_sec,
+            trace_file=trace_file,
             gpus=gpus,
             max_rps_per_gpu=max_rps_per_gpu,
             trace_unit_sec=trace_unit_sec
@@ -129,7 +127,7 @@ class RemoteWorkloadRunner:
         return client.run(server_ip=self.target_ip)
 
     def send_msg(self, channel, msg):
-        print(f"Sending message: ({channel}) {msg} ... ", end="", flush=True)
+        print(f"\t- Sending message: ({channel}) {msg} ... ", end="", flush=True)
         rep = True
         try:
             self.publisher_socket.send_string(f"{channel}", flags=zmq.SNDMORE)

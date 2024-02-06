@@ -5,7 +5,7 @@ services:
     image: experiment-runner:latest
     build:
       context: ..
-      dockerfile: ./.devcontainer/Dockerfile.experiment-runner-ubuntu20.04
+      dockerfile: ./.devcontainer/Dockerfile.experiment-runner-centos7
     stdin_open: true
     tty: true
     volumes:

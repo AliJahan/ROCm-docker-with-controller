@@ -1,5 +1,5 @@
 import zmq
-import sys
+import copy
 import time
 import json
 import threading
@@ -94,8 +94,8 @@ class PowerCollector(threading.Thread):
         powers = list()
         num_samples = 0
         with self.lock:
-            powers = self.powers_list
-            num_samples = self.num_samples
+            powers = copy.deepcopy(self.powers_list)
+            num_samples = copy.deepcopy(self.num_samples)
         return {"powers": powers, "num_samples": num_samples, "sample_interval": self.collection_interval_sec}
     def stop(self):
         running = False

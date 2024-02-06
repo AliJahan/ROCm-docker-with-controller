@@ -65,4 +65,4 @@ COPY ../scripts/utils/experiment_runner/ /experiment_runner/
 
 RUN pip3 install -r /experiment_runner/requirements.txt
 
-#ENTRYPOINT python3 /experiment_runner/experiment_runner_remote.py
+ENTRYPOINT python3 /experiment_runner/experiment_runner_remote.py
