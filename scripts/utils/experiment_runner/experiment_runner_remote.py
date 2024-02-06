@@ -164,18 +164,19 @@ class RemoteExperimentRunner:
             self.setup_server()
             results_file = f"{self.RESULTS_DIR}/lc_sweep_gpus{num_gpus}_lstep{lc_load_steps}_maxloadrps{expr_max_rps_per_gpu}_round{round}"
             prev_expr = read_performed_expers(results_file)
-            print("Collecting idle powers:")
-            self.start_power_collection()
-            time.sleep(30)
-            idle_powers = self.stop_power_collection()
-            save_results(
-                gpu=0,
-                load_pct=0,
-                load_rps=0,
-                powers=idle_powers,qos=None,
-                results_file=results_file,
-                create=True
-            )
+            if (int(round, num_gpus, 0)) not in  prev_expr:
+                print("Collecting idle powers:")
+                self.start_power_collection()
+                time.sleep(30)
+                idle_powers = self.stop_power_collection()
+                save_results(
+                    gpu=0,
+                    load_pct=0,
+                    load_rps=0,
+                    powers=idle_powers,qos=None,
+                    results_file=results_file,
+                    create=True
+                )
                
             gpu = num_gpus
             while gpu < num_gpus+1:
