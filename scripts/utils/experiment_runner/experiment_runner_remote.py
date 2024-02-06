@@ -15,7 +15,7 @@ class RemoteExperimentRunner:
             lc_load_trace: str = "",
             target_ip: str = "172.20.0.9",
             remote_ip: str = "172.20.0.6",
-            remote_resource_ctl_port: str = "2000",
+            remote_resource_ctl_port: str = "5000",
             remote_workload_ctl_port: str = "3000",
             target_docker_ctrl_port: str = "4000",
             target_power_broadcaster_port: str = "6000",

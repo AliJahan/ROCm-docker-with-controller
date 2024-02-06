@@ -138,7 +138,8 @@ class RemoteWorkloadRunner:
                 print("FAILED! error: ZMQ socket interrupted/terminated", flush=True)
             else:
                 print(f"FAILED! error: ZMQ socket error: {e}", flush=True)
-        
+            rep = False
+
         if rep == True:
             time.sleep(self.SLEEP_AFTER_SEND_MSG_SEC)
             print(f"Done!") 
