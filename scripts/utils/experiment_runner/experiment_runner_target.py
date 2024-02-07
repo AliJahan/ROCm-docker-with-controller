@@ -5,6 +5,7 @@ import os
 class TargetExperimentRunner:
     subscriber_socket = None
     supported_images = ["power-broadcaster", "Inference-Server", "miniMDock"]
+    running_dockers = list()
     ctx = None
     def __init__(
             self,
@@ -42,14 +43,15 @@ class TargetExperimentRunner:
             return False
         return True
 
-    def run_docker(self, image_name, remote_ip, remote_port):
+    def run_docker(self, image_name, remote_ip, remote_workload_contrl_port, remote_resource_contrl_port):
         if self.verify_image_name(image_name=image_name) is False:
             return False
-
+        
         env = {
             **os.environ,
-            "CONTROLLER_IP": str(remote_ip),
-            "CONTROLLER_PORT": str(remote_port),
+            "REMOTE_IP": str(remote_ip),
+            "WORKLOAD_CONTROLLER_PORT": str(remote_workload_contrl_port),
+            "RESOURCE_CONTROLLER_PORT": str(remote_resource_contrl_port),
             "PROJECT_ROOT": str(self.project_root_path),
             "LOGS_DIR": str(self.project_root_path+"/"+"docker_logs")
         }
@@ -107,12 +109,23 @@ class TargetExperimentRunner:
             splitted = msg.split(":")
             cmd, args = splitted[0], splitted[1:]
             if cmd == "run":
-                image_name, remote_ip, remote_port = args
-                res = self.run_docker(image_name=image_name, remote_ip=remote_ip, remote_port=remote_port)
+                image_name, remote_ip, remote_workload_contrl_port, remote_resource_contrl_port = args
+                if image_name in self.running_dockers:
+                    self.stop_docker(image_name=image_name)
+                    self.running_dockers.remove(image_name)
+                res = self.run_docker(
+                    image_name=image_name,
+                    remote_ip=remote_ip,
+                    remote_workload_contrl_port=remote_workload_contrl_port,
+                    remote_resource_contrl_port=remote_resource_contrl_port
+                    )
+                self.running_dockers.append(image_name)
                 self.reply_res(sender, res)
             elif cmd == "stop":
                 image_name = args[0]
-                res = self.stop_docker(image_name=image_name)
+                if image_name in self.running_dockers:
+                    res = self.stop_docker(image_name=image_name)
+                    self.running_dockers.remove(image_name)
                 self.reply_res(sender, res)
             
         print("done!!")

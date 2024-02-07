@@ -24,8 +24,8 @@ class WorkloadRunner:
 if __name__ == "__main__":
     import os
     workload = os.getenv("WORKLOAD")
-    controller_ip = os.getenv("CONTROLLER_IP")
-    controller_port = os.getenv("CONTROLLER_PORT")
+    controller_ip = os.getenv("REMOTE_IP")
+    controller_port = os.getenv("WORKLOAD_CONTROLLER_PORT")
     runner = WorkloadRunner(
             control_ip=controller_ip,
             control_port=controller_port,

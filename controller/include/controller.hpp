@@ -99,10 +99,11 @@ private:
     void deinit_shm();
     bool init_zmq();
     void deinit_zmq();
-    void split_string(const std::string &s, char delim, std::vector<std::string> results);
+    void split_string(const std::string &s, char delim, std::vector<std::string>& splitted);
+    bool hexstr2uint32(std::string mask_str, uint32_t& mask_uint32);
     inline uint32_t count_set_bits(uint32_t n); // utility
     std::string uint2hexstr(uint32_t num); //utility
-    zmq::message_t get_command();
+    bool get_command(zmq::message_t& msg);
     void apply_command(zmq::message_t& msg);
     Controller() {}; // no default ctor.
     std::string get_cur_time_str();

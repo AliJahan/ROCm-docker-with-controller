@@ -9,6 +9,8 @@ services:
     stdin_open: true
     tty: true
     volumes:
+      - "/etc/timezone:/etc/timezone:ro"
+      - "/etc/localtime:/etc/localtime:ro"
       - ../:/workspace
     working_dir: /workspace
     command: /bin/bash
@@ -22,6 +24,8 @@ services:
     stdin_open: true
     tty: true
     volumes:
+      - "/etc/timezone:/etc/timezone:ro"
+      - "/etc/localtime:/etc/localtime:ro"
       - ../:/workspace
     devices:
       - "/dev/kfd:/dev/dri"
@@ -36,7 +40,13 @@ services:
       dockerfile: ./.devcontainer/Dockerfile.remote-rocm-ubuntu
     stdin_open: true
     tty: true
+    environment:
+      - REMOTE_IP=${REMOTE_IP}
+      - WORKLOAD_CONTROLLER_PORT=${WORKLOAD_CONTROLLER_PORT}
+      - RESOURCE_CONTROLLER_PORT=${RESOURCE_CONTROLLER_PORT}
     volumes:
+      - "/etc/timezone:/etc/timezone:ro"
+      - "/etc/localtime:/etc/localtime:ro"
       - ../:/workspace
     devices:
       - "/dev/kfd:/dev/dri"
@@ -55,8 +65,9 @@ services:
     stdin_open: true
     tty: true
     volumes:
+      - "/etc/timezone:/etc/timezone:ro"
+      - "/etc/localtime:/etc/localtime:ro"
       - ../:/workspace
-      - ../dist:/mlc-llm/dist
     devices:
       - "/dev/kfd:/dev/dri"
     privileged: true
@@ -75,9 +86,12 @@ services:
     tty: true
     environment:
       - WORKLOAD=Inference-Server
-      - CONTROLLER_IP=${CONTROLLER_IP}
-      - CONTROLLER_PORT=${CONTROLLER_PORT}
+      - REMOTE_IP=${REMOTE_IP}
+      - WORKLOAD_CONTROLLER_PORT=${WORKLOAD_CONTROLLER_PORT}
+      - RESOURCE_CONTROLLER_PORT=${RESOURCE_CONTROLLER_PORT}
     volumes:
+      - "/etc/timezone:/etc/timezone:ro"
+      - "/etc/localtime:/etc/localtime:ro"
       - ../:/workspace
     devices:
       - "/dev/kfd:/dev/dri"
@@ -97,9 +111,12 @@ services:
     tty: true
     environment:
       - WORKLOAD=miniMDock
-      - CONTROLLER_IP=${CONTROLLER_IP}
-      - CONTROLLER_PORT=${CONTROLLER_PORT}
+      - REMOTE_IP=${REMOTE_IP}
+      - WORKLOAD_CONTROLLER_PORT=${WORKLOAD_CONTROLLER_PORT}
+      - RESOURCE_CONTROLLER_PORT=${RESOURCE_CONTROLLER_PORT}
     volumes:
+      - "/etc/timezone:/etc/timezone:ro"
+      - "/etc/localtime:/etc/localtime:ro"
       - ../:/workspace
     devices:
       - "/dev/kfd:/dev/dri"
@@ -118,6 +135,8 @@ services:
     stdin_open: true
     tty: true
     volumes:
+      - "/etc/timezone:/etc/timezone:ro"
+      - "/etc/localtime:/etc/localtime:ro"
       - ../:/workspace
     devices:
       - "/dev/kfd:/dev/dri"

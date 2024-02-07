@@ -1,6 +1,7 @@
 #include "controller.hpp"
 
 #include <csignal>
+#include <cstdlib>
 
 Control::Controller* controller_ptr = nullptr;
 
@@ -10,7 +11,7 @@ void signalHandler( int signum ) {
 #endif
     // cleanup and close up stuff here  
     // terminate program  
-    if(controller_ptr )
+    if(controller_ptr)
         controller_ptr->stop();
     delete controller_ptr;
     controller_ptr = nullptr;
@@ -18,17 +19,17 @@ void signalHandler( int signum ) {
 }
 
 int main(int argc, char *argv[]){
-    std::string port("9090");
-    if(argc > 1){
-        port = std::string(argv[1]);
-    }
     // CONTROL_PORT is set in Dockerfile args, then passed to cmake (see ../../Dockerfile)
     signal(SIGINT, signalHandler);  
     signal(SIGTERM, signalHandler);
+    std::string control_ip(std::getenv("REMOTE_IP"));
+    std::string control_port(std::getenv("RESOURCE_CONTROLLER_PORT"));
+    std::string app_name(std::getenv("WORKLOAD"));
 #if DEBUG_MODE
-    std::cout << "@main: port:" << port << std::endl << std::flush;
+    std::cout << "@main: worload: " << app_name << " remote controller address:" << control_ip << ":" << control_port << std::endl << std::flush;
 #endif
-    Control::Controller controller(port);
+    
+    Control::Controller controller(control_ip, control_port, app_name);
     if(controller.start(false) == false){
         std::cerr << "@main: Controller failed to start\n" << std::flush;
     }

@@ -23,7 +23,7 @@ class LCServerRunner:
         # CUMASKING_CONTROLLER_LOG is set for cumasking controller (required for rocr to activate cumasking)
         env = {
             **os.environ,
-            "CUMASKING_CONTROLLER_LOG": "/tmp/log",
+            "CUMASKING_CONTROLLER_LOG": "/workspace/logs/lc",
             # "OMP_NUM_THREADS": f'{int(ceil(n_gpus/2))}',
             "OMP_NUM_THREADS": f'{int(1)}',
             # "OMP_THREAD_LIMIT": 
@@ -132,7 +132,7 @@ class LCRemoteRunner:
     lc_runner = None
     socket_poller = None
     subscriber_socket = None
-    def __init__(self, control_ip: str, control_port: str = "45678", app_name: str = "Inference-Server"):
+    def __init__(self, control_ip: str, control_port: str, app_name: str = "Inference-Server"):
         self.ctx = None
         self.app_name = app_name
         self.control_port = control_port

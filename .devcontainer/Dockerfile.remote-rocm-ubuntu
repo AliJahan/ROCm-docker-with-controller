@@ -31,12 +31,10 @@ COPY ../controller /tmp/controller
 RUN cd /tmp/controller \
   && rm -rf build && mkdir build \
   && cd build \
-  && cmake -DCMAKE_BUILD_TYPE="${BUILD_MODE}" -DCONTROL_PORT="${CONTROL_PORT}" .. \
+  && cmake -DCMAKE_BUILD_TYPE="${BUILD_MODE}" .. \
   && make -j \
   && cd ../scripts/ \
   && bash setup_service.sh; 
 
-EXPOSE "${CONTROL_PORT}"
-
 # Start controller service () then keep container running for debug porposes
-ENTRYPOINT printf "Controller address: " && ip r | head -n 1 | awk '{printf $3}' && printf ":9090\n" && /tmp/controller/scripts/start_service.sh && /tmp/controller/scripts/debug_wait.sh
+ENTRYPOINT /usr/local/bin/controller > "/workspace/logs/$(date -Iminutes)_controller.log" & /tmp/controller/scripts/debug_wait.sh

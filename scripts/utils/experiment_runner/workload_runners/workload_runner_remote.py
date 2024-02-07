@@ -13,12 +13,14 @@ class RemoteDockerRunner:
             remote_ip: str,
             target_ip: str,
             target_docker_control_port: str,
-            remote_workload_control_port: str
+            remote_workload_control_port: str,
+            remote_resource_ctl_port: str
     ):
         self.remote_ip = remote_ip
         self.target_ip = target_ip
         self.target_docker_control_port = target_docker_control_port
         self.remote_workload_control_port = remote_workload_control_port
+        self.remote_resource_ctl_port = remote_resource_ctl_port
         self.docker_controller_socket = self.setup_socket()
 
     def setup_socket(self):
@@ -59,7 +61,7 @@ class RemoteDockerRunner:
         return rep
 
     def start_docker(self, workload):
-        msg = f"run:{workload}:{self.remote_ip}:{self.remote_workload_control_port}"
+        msg = f"run:{workload}:{self.remote_ip}:{self.remote_workload_control_port}:{self.remote_resource_ctl_port}"
         ret = self.send_msg(msg)
         if ret == True:
             if workload not in self.dockers_to_cleanup:

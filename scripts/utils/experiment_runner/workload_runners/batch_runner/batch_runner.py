@@ -25,7 +25,7 @@ class BatchRunner:
         # CUMASKING_CONTROLLER_LOG is set for cumasking controller (required for rocr to activate cumasking)
         env = {
             **os.environ,
-            "CUMASKING_CONTROLLER_LOG": "/tmp/log"
+            "CUMASKING_CONTROLLER_LOG": "/workspace/log/be"
         }
         p = subprocess.Popen(
             cmd.split(" "),

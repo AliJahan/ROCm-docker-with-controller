@@ -235,6 +235,7 @@ namespace Control{
             }
             delete thread_;
             thread_ = nullptr;
+            deinit_controller();
         }
 
         #if DEBUG_MODE
@@ -257,8 +258,9 @@ namespace Control{
             zmq::poll(&items[0], 1, timeout);
             // event on workers (reply received)?
             if (items[0].revents & ZMQ_POLLIN) {
-                zmq::message_t msg = get_command();
-                apply_command(msg);
+                zmq::message_t msg;
+                if(get_command(msg) == true)
+                    apply_command(msg);
             }
         }
         #if DEBUG_MODE
@@ -271,20 +273,44 @@ namespace Control{
             PRINT(get_cur_time_str()+" @Controller::run", "stopped@run");
         #endif
     }
-    void Controller::split_string(const std::string &s, char delim, std::vector<std::string> results) {
+    inline uint32_t Controller::count_set_bits(uint32_t n){
+        uint32_t count = 0;
+        while (n) {
+            n &= (n - 1);
+            count++;
+        }
+        return count;
+    }
+    bool Controller::hexstr2uint32(std::string mask_str, uint32_t& mask_uint32){
+        if(mask_str.size() != 8){
+            std::cout << "error: mask has to be 8-charachter hex. Example: ffffffff.\nusage: \n" << "SET CU MASK:\n\t./master cu <gpu_ind> <8-charachter hex mask0> <8-charachter hex mask1>\n";
+            return false;
+        }
+        try {
+            std::stringstream ss;
+            ss << std::hex << mask_str;
+            ss >> mask_uint32;
+            return true;
+        }
+        catch (...) {
+            std::cout << "error: could not convert " << mask_str << " to hex\n.\nusage: \n" << "SET CU MASK:\n\t./master cu <gpu_ind> <8-charachter hex mask0> <8-charachter hex mask1>\n";
+            return false;
+        }
+    }
+    void Controller::split_string(const std::string &s, char delim, std::vector<std::string>& splitted) {
         std::istringstream iss(s);
         std::string item;
         while (std::getline(iss, item, delim)) {
-            *result++ = item;
+            splitted.push_back(item);
         }
     }
     // Reads the command(zmq_msg) data from socket
-    zmq::message_t Controller::get_command(){
+    bool Controller::get_command(zmq::message_t& msg){
         #if DEBUG_MODE
             PRINT(get_cur_time_str()+" @Controller::get_command", "getting command");
         #endif
         zmq::message_t header;
-        zmq::message_t msg;
+        
         zmq::recv_result_t rcv_result = socket_ptr_->recv(header);
         assert(rcv_result && "Controller: getting id from socket rcv failed\n");
         rcv_result = socket_ptr_->recv(msg);
@@ -292,7 +318,12 @@ namespace Control{
         #if DEBUG_MODE
             PRINT(get_cur_time_str()+" @Controller::get_command", "GOT command");
         #endif
-        return std::move(msg);
+        
+        std::string target_app(header.data<char>(), header.size());
+        #if DEBUG_MODE
+            PRINT(get_cur_time_str()+" @Controller::get_command", target_app);
+        #endif
+        return (target_app == app_name);
     }
     // Excution of any recived controll msg happens here
     void Controller::apply_command(zmq::message_t& msg){
@@ -301,25 +332,39 @@ namespace Control{
         #endif
         std::string control_msg_str(msg.data<char>(), msg.size());
         std::cout << get_cur_time_str() << " <CMD_RECVD> " << control_msg_str << std::endl << std::flush;
-        std::vector<std::string> splited;
-        split_string(control_msg_str, ':', splited);
-        std::string& cmd = splited[0];
-        uint32_t gpu_ind = std::soti(splited[1]);
-        if (cmd == "SET_FREQ")
-                set_freq(gpu_ind, control_msg_ptr->value1);
+        std::vector<std::string> splitted;
+        split_string(control_msg_str, ':', splitted);
+        std::string& cmd = splitted[0];
+        uint32_t gpu_ind = std::stoi(splitted[1]);
+        if (cmd == "SET_FREQ"){
+            uint32_t freq = std::stoi(splitted[2]);
+            set_freq(gpu_ind, freq);
+        }
         else if(cmd == "RESET_FREQ")
             set_freq(gpu_ind, 225U);
         else if(cmd == "SET_CUMASK"){
-            uint32_t mask0 = std::stoi(splited[2]);
-            uint32_t mask1 = std::stoi(splited[3]);
-            set_cus(gpu_ind, value1, value2);
+            uint32_t mask0;
+            uint32_t mask1;
+            if(hexstr2uint32(std::string(splitted[2]), mask0)== false){
+                #if DEBUG_MODE
+                PRINT(get_cur_time_str()+" @Controller::apply_command", "invalid value for mask0");
+                #endif
+                return;
+            }
+            if(hexstr2uint32(std::string(splitted[3]), mask1)== false){
+                #if DEBUG_MODE
+                PRINT(get_cur_time_str()+" @Controller::apply_command", "invalid value for mask1");
+                #endif
+                return;
+            }
+            set_cus(gpu_ind, mask0, mask1);
         }
         else if(cmd == "RESET_CUMASK")
                 set_cus(gpu_ind, 0xffffffff, 0xfffffff);
+        #if DEBUG_MODE
         else{
             PRINT(get_cur_time_str()+" @Controller::apply_command", "invalid cmd");
         }
-        #if DEBUG_MODE
             PRINT(get_cur_time_str()+" @Controller::apply_command", "applying command DONE");
         #endif
     }
@@ -333,14 +378,7 @@ namespace Control{
         strftime(buf, sizeof(buf), "%Y-%m-%d %X", &tstruct);
         return std::string(buf);
     }
-    inline uint32_t Controller::count_set_bits(uint32_t n){
-        uint32_t count = 0;
-        while (n) {
-            n &= (n - 1);
-            count++;
-        }
-        return count;
-    }
+
     std::string Controller::uint2hexstr(uint32_t num){
         std::ostringstream ss;
         ss << std::hex << num;

@@ -2,7 +2,7 @@ import time
 import os
 from power_collector.power_collector import PowerCollector
 from workload_runners.workload_runner_remote import RemoteDockerRunner, RemoteWorkloadRunner
-
+from resource_managers.resource_manager import ResourceManager
 class RemoteExperimentRunner:
     power_collector = None
     resource_manager = None
@@ -35,13 +35,19 @@ class RemoteExperimentRunner:
             remote_ip=remote_ip,
             target_ip=target_ip,
             target_docker_control_port=target_docker_ctrl_port,
-            remote_workload_control_port=remote_workload_ctl_port
+            remote_workload_control_port=remote_workload_ctl_port,
+            remote_resource_ctl_port=remote_resource_ctl_port
         )
 
         self.workload_runner = RemoteWorkloadRunner(
             remote_ip=self.remote_ip,
             target_ip=self.target_ip,
             remote_workload_control_port=self.remote_workload_ctl_port
+        )
+        
+        self.resource_controller = ResourceManager(
+            remote_control_ip=remote_ip,
+            remote_control_port=remote_resource_ctl_port
         )
 
     def cleanup(self):
