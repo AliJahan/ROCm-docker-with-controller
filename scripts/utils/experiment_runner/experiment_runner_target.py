@@ -133,6 +133,7 @@ class TargetExperimentRunner:
 def main():
     control_port = "4000"
     project_path = "/home/ajaha004/repos/rocr/standalone-docker/ROCm-docker-with-controller"
+    os.makedirs(project_path+"/logs", exist_ok=True)
     expr_runner = TargetExperimentRunner(project_root_path=project_path, control_port=control_port)
     expr_runner.start()
     print("@@done")
