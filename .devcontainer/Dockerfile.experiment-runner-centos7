@@ -56,7 +56,7 @@ COPY ../workloads /workloads
 
 # build inference server
 RUN cd /workloads/Inference-server \
-    && mkdir build \
+    && rm -rf build && mkdir build \
     && cd build \
     && cmake .. \
     && make -j
