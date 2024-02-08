@@ -11,7 +11,8 @@ import zmq
 from lc_runner.lc_controller import LCController
 
 class LCServerRunner:
-    trace_file = ""
+    logs_dir = "/workspace/logs"
+    proc_log_file = None
     def __init__(self, debug = False):
         self.proc = None
         self.debug = debug
@@ -23,7 +24,7 @@ class LCServerRunner:
         # CUMASKING_CONTROLLER_LOG is set for cumasking controller (required for rocr to activate cumasking)
         env = {
             **os.environ,
-            "CUMASKING_CONTROLLER_LOG": "/workspace/logs/lc",
+            "CUMASKING_CONTROLLER_LOG": f"{self.logs_dir}/lc_rocr",
             # "OMP_NUM_THREADS": f'{int(ceil(n_gpus/2))}',
             "OMP_NUM_THREADS": f'{int(1)}',
             # "OMP_THREAD_LIMIT": 
@@ -43,47 +44,37 @@ class LCServerRunner:
             # "AMDDeviceLibs_DIR": "/opt/rocm/rocdl",
             # "amd_comgr_DIR": "/opt/rocm/comgr",
         }
+        self.proc_log_file = open(f"{self.logs_dir}/lc_run_log", 'w')
         p = subprocess.Popen(
             cmd.split(" "),
             env=env,
-            stdout=subprocess.PIPE,
+            stdout=self.proc_log_file,
             stdin=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            stderr=self.proc_log_file
         )
         self.proc = (p, psutil.Process(pid=p.pid))
         print("Done!", flush=True)
         time.sleep(2)
     
-    def load_model(self, model, dev):
-        print(f"Loaded model {model} on gpu {dev}", flush=True)
-        if self.controller.add_gpu(model, dev) == False:
-            sys.exit(0)
-    
     def set_batch_size(self, model, batch_size):
         print(f"Setting batch size for model {model} to {batch_size}", flush=True)
-        if self.controller.set_batch_size(model, batch_size) == False:
-            sys.exit(0)
-
-    def configure_server(self, model, gpu, batch_size):
-        if self.load_model(model, gpu) == False:
-            print("failed loading model")
-        if self.set_batch_size(model, batch_size) == False:
-            print("failed setting batch size")
+        return self.controller.set_batch_size(model, batch_size)
 
     def add_worker(self, model, gpu):
         print(f"Adding worker for model {model} on gpu {gpu}", flush=True)
-        self.controller.add_gpu(model, gpu)
+        return self.controller.add_gpu(model, gpu)
+
     def remove_worker(self, model, gpu):
         print(f"Removing worker for model {model} from gpu {gpu}", flush=True)
-        self.controller.remove_gpu(model, gpu)
+        return self.controller.remove_gpu(model, gpu)
 
     def pause_worker(self, model, gpu):
         print(f"Pausing worker for model {model} on gpu {gpu}", flush=True)
-        self.controller.pause_gpu(model, gpu)
+        return self.controller.pause_gpu(model, gpu)
 
     def resume_worker(self, model, gpu):
         print(f"Resuming worker for model {model} on gpu {gpu}", flush=True)
-        self.controller.resume_gpu(model, gpu)
+        return self.controller.resume_gpu(model, gpu)
     
     def stop(self):
         if self.debug:
@@ -91,7 +82,9 @@ class LCServerRunner:
     
         if self.proc is not None:
           self.proc[1].kill()
-          output, _= self.proc[0].communicate()
+          self.proc_log_file.close()
+          self.proc_log_file = None
+        #   output, _= self.proc[0].communicate()
     
         self.proc = None
         
@@ -109,11 +102,12 @@ class LCServerRunnerWrapper:
             self.server_runner.run_server(self.server_cmd)
 
     def add_gpu(self, model, gpu, batch_size):
-            self.server_runner.configure_server(model, gpu, batch_size)
-            self.server_runner.add_worker(model, gpu)
+            # self.server_runner.configure_server(model, gpu, batch_size)
+        return self.server_runner.add_worker(model, gpu) and self.server_runner.set_batch_size(model, batch_size)
+            
 
     def remove_gpu(self, model, gpu):
-            self.server_runner.remove_worker(model, gpu)
+        return self.server_runner.remove_worker(model, gpu)
 
     def stop_server(self):
         if self.server_runner is not None:
@@ -122,11 +116,13 @@ class LCServerRunnerWrapper:
 
     def pause_worker(self, model, gpu):
         if self.server_runner is not None:
-            self.server_runner.pause_worker(model, gpu)
+            return self.server_runner.pause_worker(model, gpu)
+        return False
     
     def resume_worker(self, model, gpu):
         if self.server_runner is not None:
-            self.server_runner.resume_worker(model, gpu)
+            return self.server_runner.resume_worker(model, gpu)
+        return False
 
 class LCRemoteRunner:
     lc_runner = None

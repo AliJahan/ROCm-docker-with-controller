@@ -16,6 +16,8 @@ class BatchRunner:
     debug = False
     throughput_queue = multiprocessing.Queue()
     total_tp = (0.0, 0) # tp(iteration/sec), iterations
+    logs_dir = "/workspace/logs"
+    proc_log_file = None
     def __init__(self, debug = False):
         self.debug = debug
         # threading.Thread.__init__(self)
@@ -25,14 +27,16 @@ class BatchRunner:
         # CUMASKING_CONTROLLER_LOG is set for cumasking controller (required for rocr to activate cumasking)
         env = {
             **os.environ,
-            "CUMASKING_CONTROLLER_LOG": "/workspace/log/be"
+            "CUMASKING_CONTROLLER_LOG": f"{self.logs_dir}/be_rocr"
         }
+
+        self.proc_log_file = open(f"{self.logs_dir}/lc_run_log_g{gpu+1}", 'w')
         p = subprocess.Popen(
             cmd.split(" "),
             env=env,
-            stdout=subprocess.PIPE,
+            stdout=self.proc_log_file,
             stdin=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            stderr=self.proc_log_file
         )
         
         ps = psutil.Process(pid=p.pid)
@@ -116,6 +120,8 @@ class BatchRunner:
         if self.procs is not None:
             if self.procs[1].is_running():
                 self.procs[1].kill()
+                self.proc_log_file.close()
+                self.proc_log_file = None
         with self.lock:
             self.throughput_reader_thread = None
             self.procs = None
