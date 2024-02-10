@@ -32,10 +32,6 @@ class RemoteDockerRunner:
             publisher = self.ctx.socket(zmq.DEALER)
             publisher.setsockopt_string(zmq.IDENTITY, self.remote_header)
             publisher.connect(f"tcp://{self.target_ip}:{self.target_docker_control_port}")
-            # publisher.setsockopt(zmq.CONFLATE, 1)
-            # print(f"(channel subscribed: {self.app_name}) ", end="")
-            # poller = zmq.Poller()
-            # poller.register(publisher, zmq.POLLIN)
             print("Success!")
             return publisher
         except Exception as e:
@@ -163,7 +159,9 @@ class RemoteWorkloadRunner:
             msg += args['model']+":"+args['gpu']+":"+args['batch_size']
 
         channel = self.get_channel(is_be_wl=is_be_wl)
-        return self.send_msg(channel, msg)
+        res = self.send_msg(channel, msg)
+        time.sleep(10) # sleep more for adding gpu since the worker performs a dry run upon instanciation
+        return res
     
     def pause_gpu(self, is_be_wl, args):
         msg = f"pause_gpu:"

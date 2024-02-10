@@ -102,9 +102,7 @@ class LCServerRunnerWrapper:
             self.server_runner.run_server(self.server_cmd)
 
     def add_gpu(self, model, gpu, batch_size):
-            # self.server_runner.configure_server(model, gpu, batch_size)
         return self.server_runner.add_worker(model, gpu) and self.server_runner.set_batch_size(model, batch_size)
-            
 
     def remove_gpu(self, model, gpu):
         return self.server_runner.remove_worker(model, gpu)

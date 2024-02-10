@@ -111,6 +111,8 @@ class LCClientRunner:
                 return extract_latency(split_by_new_line[1:])
             elif "power" in split_by_new_line[0]:
                 return extract_power(split_by_new_line[1:])
+        if "Client did not recieve any response" in output:
+            return None
         latency_str = output[output.find("end2end"): output.find("inference")]
         percentile_latency = dict()
         percentile_latency['min'] = break_to_key_val(latency_str, prefix='min')
@@ -192,8 +194,15 @@ class LCClientRunnerWarpper:
             debug=self.debug
         )
         file_name = self.trace_file.split('/')[-1]
-        print(f"\t- [Client runner] Running the LC client: gpus:{self.gpus} trace_file:{file_name} trace_unit:{self.trace_unit_sec} sec each load.")
-        return client.run_client(server_ip=server_ip)
+
+        # Sometimes client fails, we try 3 times
+        num_tries = 3
+        res = None
+        tries = 0
+        while res == None and tries < num_tries:
+            print(f"\t- [Client runner] Running the LC client: try:{tries} gpus:{self.gpus} trace_file:{file_name} trace_unit:{self.trace_unit_sec} sec each load.")
+            res = client.run_client(server_ip=server_ip)
+        return res
 
 def test_lc_client_runner():
     import sys
