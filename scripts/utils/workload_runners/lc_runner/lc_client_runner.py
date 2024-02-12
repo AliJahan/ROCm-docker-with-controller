@@ -1,16 +1,6 @@
-from collections.abc import Callable, Iterable, Mapping
-import os
 import math
-import time 
+import time
 import subprocess
-from typing import Any
-import psutil
-import threading
-import math 
-import numpy as np
-
-# from lc_controller import LCController
-# from lc_server_runner import LoadMonitor
 
 MODEL_NAME = "resnet152"
 CLIENT_CMD = f"/workloads/Inference-server/build/bin/client -m {MODEL_NAME} -c 1 -e trace -f "

@@ -1,6 +1,5 @@
 import zmq
 import sys
-import time
 import json
 
 def setup_sockets(port: str):

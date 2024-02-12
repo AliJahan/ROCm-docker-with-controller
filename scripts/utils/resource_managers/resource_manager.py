@@ -2,12 +2,12 @@ import zmq
 import time
 from enum import Enum
 
-class WorkloadType(Enum):
+class GPUWorkloadType(Enum):
     FREE = 0
     BE = 1
     LC = 2
 
-class ResourceManager:
+class GPUResourceManager:
     SLEEP_AFTER_SEND_MSG_SEC = 1
     resrouce_controller_socket = None
     remote_header = "remote_docker_runner"
@@ -25,7 +25,7 @@ class ResourceManager:
         self.resrouce_controller_socket = self.setup_socket()
         # Set masks for all GPU masks (MI50 has 60 CUs)
         for i in range(self.max_num_gpus): 
-            self.gpus_masks[i] = {WorkloadType.BE: list(), WorkloadType.LC: list(), WorkloadType.FREE: [i for i in range(1, self.max_cus+1)]}
+            self.gpus_masks[i] = {GPUWorkloadType.BE: list(), GPUWorkloadType.LC: list(), GPUWorkloadType.FREE: [i for i in range(1, self.max_cus+1)]}
 
     def convert_bin2hex_str(self, bin_str):
         _hex = str(hex(int(bin_str, 2)))[2:]
@@ -45,20 +45,20 @@ class ResourceManager:
     def add_cu(self, app_name: str, gpu: int, cus: int, is_be = False):
         if gpu not in self.gpus_masks:
             return False
-        if len(self.gpus_masks[gpu][WorkloadType.FREE]) < cus:
+        if len(self.gpus_masks[gpu][GPUWorkloadType.FREE]) < cus:
             return False
         
-        self.gpus_masks[gpu][WorkloadType.FREE] = sorted(self.gpus_masks[gpu][WorkloadType.FREE])
+        self.gpus_masks[gpu][GPUWorkloadType.FREE] = sorted(self.gpus_masks[gpu][GPUWorkloadType.FREE])
 
         mask = ""
         if is_be:
-            self.gpus_masks[gpu][WorkloadType.BE] += self.gpus_masks[gpu][WorkloadType.FREE][-cus:]
-            self.gpus_masks[gpu][WorkloadType.FREE] = self.gpus_masks[gpu][WorkloadType.FREE][:-cus]
-            mask = self.generate_bin_str(self.gpus_masks[gpu][WorkloadType.BE])
+            self.gpus_masks[gpu][GPUWorkloadType.BE] += self.gpus_masks[gpu][GPUWorkloadType.FREE][-cus:]
+            self.gpus_masks[gpu][GPUWorkloadType.FREE] = self.gpus_masks[gpu][GPUWorkloadType.FREE][:-cus]
+            mask = self.generate_bin_str(self.gpus_masks[gpu][GPUWorkloadType.BE])
         else:
-            self.gpus_masks[gpu][WorkloadType.LC] += self.gpus_masks[gpu][WorkloadType.FREE][:cus]
-            self.gpus_masks[gpu][WorkloadType.FREE] = self.gpus_masks[gpu][WorkloadType.FREE][cus:]
-            mask = self.generate_bin_str(self.gpus_masks[gpu][WorkloadType.LC])
+            self.gpus_masks[gpu][GPUWorkloadType.LC] += self.gpus_masks[gpu][GPUWorkloadType.FREE][:cus]
+            self.gpus_masks[gpu][GPUWorkloadType.FREE] = self.gpus_masks[gpu][GPUWorkloadType.FREE][cus:]
+            mask = self.generate_bin_str(self.gpus_masks[gpu][GPUWorkloadType.LC])
         assert len(mask) == 64, f"generated mask: {mask} is longer than 64 bits!"
         mask1 = self.convert_bin2hex_str(mask[:32])
         mask0 = self.convert_bin2hex_str(mask[32:])
@@ -78,23 +78,23 @@ class ResourceManager:
         if gpu not in self.gpus_masks:
             return False
 
-        if is_be and len(self.gpus_masks[gpu][WorkloadType.BE]) < cus:
+        if is_be and len(self.gpus_masks[gpu][GPUWorkloadType.BE]) < cus:
             return False
 
-        if not is_be and len(self.gpus_masks[gpu][WorkloadType.LC]) < cus:
+        if not is_be and len(self.gpus_masks[gpu][GPUWorkloadType.LC]) < cus:
             return False
 
         mask = ""
         if is_be:
-            self.gpus_masks[gpu][WorkloadType.BE] = sorted(self.gpus_masks[gpu][WorkloadType.BE])
-            self.gpus_masks[gpu][WorkloadType.FREE] += self.gpus_masks[gpu][WorkloadType.BE][:cus]
-            self.gpus_masks[gpu][WorkloadType.BE] = self.gpus_masks[gpu][WorkloadType.BE][cus:]
-            mask = self.generate_bin_str(self.gpus_masks[gpu][WorkloadType.BE])
+            self.gpus_masks[gpu][GPUWorkloadType.BE] = sorted(self.gpus_masks[gpu][GPUWorkloadType.BE])
+            self.gpus_masks[gpu][GPUWorkloadType.FREE] += self.gpus_masks[gpu][GPUWorkloadType.BE][:cus]
+            self.gpus_masks[gpu][GPUWorkloadType.BE] = self.gpus_masks[gpu][GPUWorkloadType.BE][cus:]
+            mask = self.generate_bin_str(self.gpus_masks[gpu][GPUWorkloadType.BE])
         else:
-            self.gpus_masks[gpu][WorkloadType.LC] = sorted(self.gpus_masks[gpu][WorkloadType.LC])
-            self.gpus_masks[gpu][WorkloadType.FREE] += self.gpus_masks[gpu][WorkloadType.LC][-cus:]
-            self.gpus_masks[gpu][WorkloadType.LC] = self.gpus_masks[gpu][WorkloadType.LC][:-cus]
-            mask = self.generate_bin_str(self.gpus_masks[gpu][WorkloadType.LC])
+            self.gpus_masks[gpu][GPUWorkloadType.LC] = sorted(self.gpus_masks[gpu][GPUWorkloadType.LC])
+            self.gpus_masks[gpu][GPUWorkloadType.FREE] += self.gpus_masks[gpu][GPUWorkloadType.LC][-cus:]
+            self.gpus_masks[gpu][GPUWorkloadType.LC] = self.gpus_masks[gpu][GPUWorkloadType.LC][:-cus]
+            mask = self.generate_bin_str(self.gpus_masks[gpu][GPUWorkloadType.LC])
 
         assert len(mask) == 64, f"generated mask: {mask} is longer than 64 bits!"
         mask1 = self.convert_bin2hex_str(mask[:32])
@@ -143,11 +143,16 @@ class ResourceManager:
         return self.send_msg(app_name, f"SET_CUMASK:{gpu}:{cumask_full_hex0}:{cumask_full_hex1}")
     
     def set_freq(self, app_name: str, gpu: int, freq: int):
+        if gpu not in self.gpus_masks:
+            print(f"Gpu ({gpu}) does not exists", flush=True)
+            return False
+
         if freq < 5 or freq > 225:
             print(f"Freq provided ({freq}) is not withing range (5,225)", flush=True)
             return False
+
         # Warning check:
-        if len(self.gpus_masks[gpu][WorkloadType.BE]) > 0 and len(self.gpus_masks[gpu][WorkloadType.LC]) > 0:
+        if len(self.gpus_masks[gpu][GPUWorkloadType.BE]) > 0 and len(self.gpus_masks[gpu][GPUWorkloadType.LC]) > 0:
             print(f"WARNNING: Both BE and LC apps are located in this GPU, setting gpu {gpu} freq to {freq} may impact both apps performance", flush=True)
         # for cleanup
         if app_name not in self.apps_freq_changed:
@@ -157,12 +162,12 @@ class ResourceManager:
         return self.send_msg(app_name, f"SET_FREQ:{gpu}:{freq}")
     
     def cleanup(self):
-        for app_name in self.apps_freq_changed:
+        for app_name in self.apps_freq_changed: # app_name unnecessary since freq is set per gpu
             for gpu in self.apps_freq_changed[app_name]:
                 self.set_freq(app_name=app_name, gpu=gpu, freq=225)
 
 def test_resrouce_manager():
-    mgr = ResourceManager()
+    mgr = GPUResourceController()
     print("Adding BE")
     # time.sleep(10)
     for i in range(6):

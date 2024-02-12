@@ -1,8 +1,8 @@
-import zmq
-import time
-import threading
 import json 
-import copy
+import time
+import zmq
+import threading
+
 
 class LoadMonitor(threading.Thread):
     load = 0

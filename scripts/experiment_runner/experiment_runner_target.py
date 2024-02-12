@@ -1,6 +1,8 @@
 import zmq
 import subprocess
-import os 
+import os
+import sys
+sys.path.insert(1, '../') # for utils TODO: make it a wheel 
 
 class TargetExperimentRunner:
     subscriber_socket = None

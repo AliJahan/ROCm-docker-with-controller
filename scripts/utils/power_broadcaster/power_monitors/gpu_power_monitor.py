@@ -86,17 +86,31 @@ class GPUPowerMonitor(threading.Thread):
             self.runnig = True
         nb_samples = 1
         log = ""
+        num_reading_errors = 0
+        max_errors = 50
         while True:
             with self.lock:
                 if self.runnig == False:
                     break
             power = dict()
+            error_reading = 0
             for i in range(self.num_gpus):
                 gpu_pow = int(self.get_cur_power(i))
                 if gpu_pow == -1: # just in case rocm-smi give error
-                    print("Could not get power from rocm-smi", flush=True)
+                    error_reading = True
                     break
                 power[str(i)] = gpu_pow
+            # reading error checking
+            if error_reading:
+                print(f"Error reading powers of at least one GPU {num_reading_errors}/{max_errors}")
+                # maybe the rocm-smi has issues? end power reading
+                if num_reading_errors > max_errors:
+                    print(f"Error reading powers of at least one GPU for {num_reading_errors} consecutive times. Stopping!")
+                    break
+                num_reading_errors += 1
+                continue
+            # resert number of consec. errors
+            num_reading_errors = 0
             # calc. avg. and update    
             if self.queue.empty(): # no avg for the first sample
                 nb_samples = 1

@@ -1,11 +1,8 @@
 # cmd: turbostat -S -i 0.5 -q --hide Avg_MHz,Busy%,Bzy_MHz,TSC_MHz,IPC,IRQ,POLL,C1,C2,POLL%,C1%,C2%,CorWatt 
-import sys
 import threading
 import subprocess
 import multiprocessing
 import time
-import datetime 
-import zmq
 import sys
 
 class CPUPowerMonitor(threading.Thread):

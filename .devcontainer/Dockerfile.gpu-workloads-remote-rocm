@@ -20,7 +20,7 @@ RUN cd /workloads/miniMDock/ \
   && . /etc/profile.d/modules.sh \ 
   && ./compile_hip_coe.sh
 
-COPY ../scripts/utils/experiment_runner/workload_runners /workload_runner
+COPY ../scripts/utils/workload_runners /workload_runner
 
 RUN cd /workload_runner/ \
     && pip3 install -r requirements.txt

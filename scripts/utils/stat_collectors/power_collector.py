@@ -1,9 +1,9 @@
 import zmq
 import copy
-import time
 import json
 import threading
 import multiprocessing
+
 class PowerCollector(threading.Thread):
     lock = threading.Lock()
     queue = multiprocessing.Queue()

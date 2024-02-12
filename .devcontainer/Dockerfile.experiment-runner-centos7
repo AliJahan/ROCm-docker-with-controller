@@ -61,8 +61,8 @@ RUN cd /workloads/Inference-server \
     && cmake .. \
     && make -j
 
-COPY ../scripts/utils/experiment_runner/ /experiment_runner/
+COPY ../scripts/utils/ /experiments/
 
-RUN pip3 install -r /experiment_runner/requirements.txt
+RUN pip3 install -r /experiments/experiment_runner/requirements.txt
 
-ENTRYPOINT python3 /experiment_runner/experiment_runner_remote.py
+ENTRYPOINT python3 /experiments/experiment_runner/experiment_runner_remote.py
