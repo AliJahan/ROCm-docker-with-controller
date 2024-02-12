@@ -1,5 +1,5 @@
-from .batch_runner.batch_runner import BatchRemoteRunner
-from .lc_runner.lc_server_runner import LCRemoteRunner
+from batch_runner.batch_runner import BatchRemoteRunner
+from lc_runner.lc_server_runner import LCRemoteRunner
 
 class WorkloadRunner:
     runner = None
