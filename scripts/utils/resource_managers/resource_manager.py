@@ -41,11 +41,21 @@ class GPUResourceManager:
             else:
                 mask += '0'
         return mask
+    def get_current_cus(self, gpu: int, is_be = False):
+        if is_be:
+            return len(self.gpus_masks[gpu][GPUWorkloadType.BE])
+        else:
+            return len(self.gpus_masks[gpu][GPUWorkloadType.LC])
 
     def add_cu(self, app_name: str, gpu: int, cus: int, is_be = False):
+        if cus < 0:
+            return False
+        
         if gpu not in self.gpus_masks:
+            print(f"\t- [GPUResourceManager]: ERROR requested gpu ({gpu}) is not available!")
             return False
         if len(self.gpus_masks[gpu][GPUWorkloadType.FREE]) < cus:
+            print(f"\t- [GPUResourceManager]: ERROR requested cus ({cus}) is less than the available cus({len(self.gpus_masks[gpu][GPUWorkloadType.FREE])})")
             return False
         
         self.gpus_masks[gpu][GPUWorkloadType.FREE] = sorted(self.gpus_masks[gpu][GPUWorkloadType.FREE])
@@ -63,7 +73,7 @@ class GPUResourceManager:
         mask1 = self.convert_bin2hex_str(mask[:32])
         mask0 = self.convert_bin2hex_str(mask[32:])
 
-        print(f"Mask for app:{app_name} generated. (mask0={mask0} mask1={mask1})", flush=True)
+        print(f"\t- [GPUResourceManager]: Mask for app:{app_name} generated. (mask0={mask0} mask1={mask1})", flush=True)
 
         return self.set_mask(
             app_name=app_name,
@@ -72,16 +82,23 @@ class GPUResourceManager:
             cumask_full_hex1=mask1
         )
     def remove_cu(self, app_name: str, gpu: int, cus: int, is_be = False):
+        if cus < 0:
+            print(f"\t- [GPUResourceManager]: ERROR requested cus ({cus}) is less than zero")
+            return False
+
         if cus == 0:
             return True
 
         if gpu not in self.gpus_masks:
+            print(f"\t- [GPUResourceManager]: ERROR requested gpu ({gpu}) is not available!")
             return False
 
         if is_be and len(self.gpus_masks[gpu][GPUWorkloadType.BE]) < cus:
+            print(f"\t- [GPUResourceManager]: ERROR requested cus ({cus}) is less than the available cus to remove ({len(self.gpus_masks[gpu][GPUWorkloadType.BE])})")
             return False
 
         if not is_be and len(self.gpus_masks[gpu][GPUWorkloadType.LC]) < cus:
+            print(f"\t- [GPUResourceManager]: ERROR requested cus ({cus}) is less than the available cus to remove ({len(self.gpus_masks[gpu][GPUWorkloadType.LC])})")
             return False
 
         mask = ""
@@ -100,7 +117,7 @@ class GPUResourceManager:
         mask1 = self.convert_bin2hex_str(mask[:32])
         mask0 = self.convert_bin2hex_str(mask[32:])
 
-        print(f"Mask for app:{app_name} generated. (mask0={mask0} mask1={mask1})", flush=True)
+        print(f"\t- [GPUResourceManager]: Mask for app:{app_name} generated. (mask0={mask0} mask1={mask1})", flush=True)
         return self.set_mask(
             app_name=app_name,
             gpu=gpu,

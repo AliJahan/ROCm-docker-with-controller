@@ -102,7 +102,10 @@ def main():
     ip = "172.20.0.9"
     port = "5952"
     num_samples = 10
-    power_colletor = LCLoadCollector(ip, port)
+    power_colletor = LCLoadCollector(
+        load_broadcaster_ip=ip,
+        load_broadcaster_port=port
+    )
     power_colletor.start()
     for i in range(num_samples):
         print(f"#{i}: {power_colletor.get_cur_load()}")

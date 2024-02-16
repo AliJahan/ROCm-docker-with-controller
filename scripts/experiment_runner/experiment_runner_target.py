@@ -2,7 +2,7 @@ import zmq
 import subprocess
 import os
 import sys
-sys.path.insert(1, '../') # for utils TODO: make it a wheel 
+sys.path.insert(1, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # for utils TODO: make it a wheel 
 
 class TargetExperimentRunner:
     subscriber_socket = None

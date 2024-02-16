@@ -2,4 +2,4 @@
 
 . ./env_setup.sh
 
-rm -rf ${LOGS_DIR}
+rm -rf ${LOGS_DIR}/*

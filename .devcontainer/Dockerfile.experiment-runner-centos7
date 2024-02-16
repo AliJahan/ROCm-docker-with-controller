@@ -61,7 +61,7 @@ RUN cd /workloads/Inference-server \
     && cmake .. \
     && make -j
 
-COPY ../scripts/utils/ /experiments/
+COPY ../scripts/ /experiments/
 
 RUN pip3 install -r /experiments/experiment_runner/requirements.txt
 

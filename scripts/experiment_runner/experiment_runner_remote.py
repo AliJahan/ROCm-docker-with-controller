@@ -1,6 +1,7 @@
+import os
 import time
 import sys
-sys.path.insert(1, '../') # for utils TODO: make it a wheel
+sys.path.insert(1, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # for utils TODO: make it a wheel
 
 from utils.stat_collectors.power_collector import PowerCollector
 from utils.workload_runners.workload_runner_remote import RemoteDockerRunner, RemoteWorkloadRunner
@@ -350,7 +351,7 @@ class RemoteExperimentRunner:
         
         for round in range(1, rounds+1): 
             gpu = num_gpus
-            for power_cap in range(225, 5,-power_cap_step):
+            for power_cap in range(225, 0,-power_cap_step):
                 results_file = f"{self.RESULTS_DIR}/lc_load_vs_cap{power_cap}_gpus{num_gpus}_lstep{lc_load_steps}_capstep{power_cap_step}_maxloadrps{expr_max_rps_per_gpu}_round{round}"
                 # skip performed experiments
                 prev_expr = read_performed_expers(file_name=results_file, round=round)
@@ -446,10 +447,14 @@ class RemoteExperimentRunner:
                     )
                     assert self.docker_runner.stop_docker("power-broadcaster") == True, "Failed! stopping experiments!"
                     print(f"---------------------------------------" , flush=True)
-                print("4-Stopping Inference-Server service ... " , flush=True)
+                for g in range(0, gpu):
+                    print(f"4-Resetting power cap for gpu {g} to 225 (reset)..." , flush=True)
+                    assert self.resource_controller.set_freq(app_name="Inference-Server", gpu=g, freq=225), f"Could not set power cap to 225 for gpu {g}"
+                print("5-Stopping Inference-Server service ... " , flush=True)
                 assert self.docker_runner.stop_docker("Inference-Server")== True, "Could not stop Inference-Servre service"
                 self.cleanup()
                 print("Experiment end-------------------------------" , flush=True)
+            
     def run_sweep_lc_load_vs_cu_mask(self, lc_load_steps: int, cumask_step: int, rounds: int, num_gpus: int, model: str = "resnet152"):
         args = dict()
         args['model'] = model
@@ -557,7 +562,7 @@ class RemoteExperimentRunner:
                     print(f"@@All experiments for round:{round} cus: {total_cus} gpus: {gpu} are skipped, going to the next round", flush=True)
                     continue
                 # there is at list one experiment for this power_cap
-                print("Experiment begin-----------------------------" , flush=True)
+                print(f"Experiment begin(for cus:{total_cus})-----------------" , flush=True)
                 print("Setting up power-broadvaster on target server" , flush=True)
                 print("-------------" , flush=True)
                 # self.setup_server()
@@ -568,7 +573,7 @@ class RemoteExperimentRunner:
                     time.sleep(30)
                     idle_powers = self.stop_power_collection()
                     save_results(
-                        gpu=0,
+                        gpu=gpu,
                         load_pct=0,
                         load_rps=0,
                         cus=total_cus,
@@ -590,7 +595,8 @@ class RemoteExperimentRunner:
                     print(f"\t2.1- Adding gpu {g}..." , flush=True)
                     assert self.workload_runner.add_gpu(is_be_wl=False, args=args), f"Could not add gpu {g} to inference server"
                     print(f"\t2.2- Setting num cus for gpu {g} to 60 (reset)..." , flush=True)
-                    assert self.resource_controller.add_cu(app_name="Inference-Server", gpu=g, cus=60, is_be=False), f"Could not set power cap to 225 for gpu {g}"
+                    current_cus = self.resource_controller.get_current_cus(gpu=g, is_be=False)                    
+                    assert self.resource_controller.add_cu(app_name="Inference-Server", gpu=g, cus=(60-current_cus), is_be=False), f"Could not set cu mask to 60 for gpu {g}"
                 # Warmup
                 # return
                 warmup_trace = trace_files_map_currected[list(trace_files_map_currected.keys())[0]]
@@ -605,9 +611,10 @@ class RemoteExperimentRunner:
                     trace_unit_sec=expr_trace_unit_sec
                 )
                 for g in range(0, gpu):
-                    print(f"\t2.4- Setting num cus for gpu {g} to {total_cus} (reset)..." , flush=True)
-                    if total_cus != 60:
-                        assert self.resource_controller.remove_cu(app_name="Inference-Server", gpu=g, cus=cumask_step), f"Could not add {cumask_step} cus for gpu {g}"
+                    current_cus = self.resource_controller.get_current_cus(gpu=g, is_be=False)
+                    print(f"\t2.4- Setting num cus for gpu {g} to from {current_cus} cus, removing {(n_cus)*cumask_step} (reset)..." , flush=True)
+                    assert self.resource_controller.remove_cu(app_name="Inference-Server", gpu=g, cus=(current_cus)), f"Could not remove {current_cus} cus for gpu {g}"
+                    assert self.resource_controller.add_cu(app_name="Inference-Server", gpu=g, cus=(total_cus)), f"Could not add {total_cus} cus for gpu {g}"
                 for load_pct in trace_files_map_currected:
                     assert self.docker_runner.start_docker("power-broadcaster") == True, "Failed! stopping experiments!"
                     print(f"3-Running client with load {load_pct}% trace:{trace_files_map_currected[load_pct]}" , flush=True)
@@ -638,10 +645,14 @@ class RemoteExperimentRunner:
                         results_file=results_file,
                         create=False
                     )
+                    print(f"4-Stopping power-broadcaster for {load_pct}%" , flush=True)
                     assert self.docker_runner.stop_docker("power-broadcaster") == True, "Failed! stopping experiments!"
-
                     print(f"---------------------------------------" , flush=True)
-                print("4-Stopping Inference-Server service ... " , flush=True)
+                for g in range(0, gpu):
+                    current_cus = self.resource_controller.get_current_cus(gpu=gpu, is_be=False)
+                    print(f"4.1-Removing {current_cus} cus from gpu {g} ... " , flush=True)
+                    assert self.resource_controller.remove_cu(app_name="Inference-Server", gpu=g, cus=current_cus), f"Could not remove {current_cus} cus for gpu {g}"
+                print("5-Stopping Inference-Server service ... " , flush=True)
                 assert self.docker_runner.stop_docker("Inference-Server")== True, "Could not stop Inference-Servre service"
                 self.cleanup()
                 print("Experiment end-------------------------------" , flush=True)
@@ -650,12 +661,13 @@ class RemoteExperimentRunner:
 
 if __name__ == "__main__":
     remote_runner = RemoteExperimentRunner()
-    # for gpu in [1]:
+
+    # for gpu in [1]: ## get max rps per various number of GPUs
     #     remote_runner.run_lc_sweep_gpu_experiment(lc_load_steps=2, rounds=2, num_gpus=gpu)
-    # for gpu in [1]:
-    #     remote_runner.run_sweep_lc_load_vs_power_cap(lc_load_steps=2, power_cap_step=5, rounds=2, num_gpus=gpu)
-    # for gpu in [1]:
-    #     remote_runner.run_sweep_lc_load_vs_cu_mask(lc_load_steps=2, cumask_step=2, rounds=2, num_gpus=gpu)
+    # for gpu in [1]: # power cap vs qos
+    #     remote_runner.run_sweep_lc_load_vs_power_cap(lc_load_steps=2, power_cap_step=5, rounds=1, num_gpus=gpu)
+    for gpu in [1]: # cu vs qos
+        remote_runner.run_sweep_lc_load_vs_cu_mask(lc_load_steps=2, cumask_step=2, rounds=1, num_gpus=gpu)
     
     print("Done with experiment waiting 10 sec")
     # time.sleep(10000)

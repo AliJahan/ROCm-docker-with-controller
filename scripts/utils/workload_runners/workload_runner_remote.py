@@ -83,16 +83,18 @@ class RemoteDockerRunner:
 class RemoteWorkloadRunner:
     SLEEP_AFTER_SEND_MSG_SEC = 5
     publisher_socket = None
-    be_runner_channel = "miniMDock"
-    lc_runner_channel = "Inference-Server"
     def __init__(
             self,
             remote_ip: str,
             target_ip: str,
             remote_workload_control_port: str,
+            lc_workload_name: str = "Inference-Server",
+            be_workload_name: str = "miniMDock"
     ):
         self.remote_ip = remote_ip
         self.target_ip = target_ip
+        self.be_workload_name = be_workload_name
+        self.lc_workload_name = lc_workload_name
         self.remote_workload_control_port = remote_workload_control_port
         self.publisher_socket = self.setup_socket()
 
@@ -145,7 +147,7 @@ class RemoteWorkloadRunner:
 
         return rep
     def get_channel(self, is_be_wl):
-        return self.be_runner_channel if is_be_wl == True else self.lc_runner_channel
+        return self.be_workload_name if is_be_wl == True else self.lc_workload_name
 
     def start(self, is_be_wl):
         channel = self.get_channel(is_be_wl=is_be_wl)
@@ -161,7 +163,7 @@ class RemoteWorkloadRunner:
 
         channel = self.get_channel(is_be_wl=is_be_wl)
         res = self.send_msg(channel, msg)
-        time.sleep(10) # sleep more for adding gpu since the worker performs a dry run upon instanciation
+        # time.sleep(10) # sleep more for adding gpu since the worker performs a dry run upon instanciation
         return res
     
     def pause_gpu(self, is_be_wl, args):
