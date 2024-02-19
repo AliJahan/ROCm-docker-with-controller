@@ -16,7 +16,7 @@ ENV PCP_DIR=/opt/rh/devtoolset-9/root
 ENV rpmlibdir=/usr/lib64
 ENV LD_LIBRARY_PATH=/opt/rh/devtoolset-9/root$rpmlibdir$rpmlibdir32${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
 ENV LD_LIBRARY_PATH=/opt/rh/devtoolset-9/root$rpmlibdir$rpmlibdir32:/opt/rh/devtoolset-9/root$rpmlibdir/dyninst$rpmlibdir32/dyninst${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
-ENV  PKG_CONFIG_PATH=/opt/rh/devtoolset-9/root/usr/lib64/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}
+ENV PKG_CONFIG_PATH=/opt/rh/devtoolset-9/root/usr/lib64/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}
 RUN yum install -y glibc-langpack-en cmake python3 python3-devel python3-pip xxd wget make openssl-devel git
 
 # Inference-server dependencies

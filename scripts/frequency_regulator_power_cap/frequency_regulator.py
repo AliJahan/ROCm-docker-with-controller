@@ -17,9 +17,6 @@ class FrequencyRegulator:
     def __init__(
             self,
             regulation_signal_file: str,
-            electricity_cost: float,
-            regulation_up_reward: float,
-            regulation_down_reward: float,
             lc_workload_name: str,
             lc_qos_msec: int,
             lc_qos_metric: str,
@@ -36,11 +33,6 @@ class FrequencyRegulator:
             target_docker_ctrl_port: str = "4000",
             target_power_broadcaster_port: str = "6000"
         ):
-        # For calculating costs and reward
-        self.electricity_cost = electricity_cost
-        self.regulation_up_reward = regulation_up_reward
-        self.regulation_down_reward = regulation_down_reward
-        
         # LC information
         self.lc_workload_name = lc_workload_name
         self.lc_qos_msec = lc_qos_msec
@@ -79,23 +71,43 @@ class FrequencyRegulator:
         #     remote_workload_ctl_port=remote_workload_ctl_port
         # )
 
-        # self.rs_sampler = RSSampler(
-        #     rs_file_path=regulation_signal_file
-        # )
-    def start(self):
+        self.rs_sampler = RSSampler(
+            rs_file_path=regulation_signal_file
+        )
+
+    def start(
+            self, 
+            electricity_cost: float,
+            regulation_up_reward: float,
+            regulation_down_reward: float
+        ):
         optimization_res = self.power_model.optimized_for_fr(
-            elec_cost=self.electricity_cost,
-            reg_down=self.regulation_down_reward,
-            reg_up=self.regulation_up_reward
+            elec_cost=electricity_cost,
+            reg_down=regulation_down_reward,
+            reg_up=regulation_up_reward
         )
         # if not participating...
-        if optimization_res['powers']['offset_power'] is None:
+        if optimization_res['powers']['offset_power'] is 0:
             optimization_res['metrics'] = {
                 'perf_score': None,
                 'lc_qos_pass': True,
                 'be_tp': 1.0
             }
             return optimization_res
+
+        avg_power = optimization_res['powers']['offset_power']
+        max_decrease_watt = optimization_res['powers']["regulation"]['reg_up']
+        max_increase_watt = optimization_res['powers']["regulation"]['reg_down']
+        self.setup_server()
+        self.warmp()
+        self.start_client()
+        self.start_power_collection()
+        for rs_val in self.rs_sampler.sample(450)[0]:
+            next_power = max_increase_watt if rs_val > 0 else -max_decrease_watt
+            next_power *= rs_val
+            next_power += avg_power
+            curr_power = self.get_current_remote_power()
+            
 
     def start_power_collection(self):
         assert self.power_collector is None, "[FrequencyRegulator/start_power_collection]: power collector is alreary running"

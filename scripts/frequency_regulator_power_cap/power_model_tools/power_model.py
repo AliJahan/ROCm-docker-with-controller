@@ -148,6 +148,9 @@ class PowerModel:
             if power_profile[workload] is None: # BE is not ready yet
                 continue
             for model_type in power_profile[workload]: # cu or cap
+                if plot:
+                    plt.cla()
+
                 power_model[workload][model_type] = dict()
                 for type_value in power_profile[workload][model_type]: # num_cus or power_cap value
                     powers = power_profile[workload][model_type][type_value].gpu_0_avg_pow.values
@@ -158,10 +161,10 @@ class PowerModel:
                     regressor.fit(loads_pct, powers)
                     power_model[workload][model_type][type_value] = regressor.predict
                     if plot:
-                        plt.cla()
-                        plt.scatter(loads_pct, powers,  color='black', label="Power Data")
+                        # plt.cla()
+                        # plt.scatter(loads_pct, powers,  color='black', label="Power Data")
                         # plt.xlim(min(loads_pct)-10,max(loads_pct)+10)
-                        plt.plot(loads_pct, regressor.predict(loads_pct), color='blue', linewidth=3, label="Power Model")
+                        plt.plot(loads_pct, regressor.predict(loads_pct), linewidth=3, label=f"{model_type}={type_value}")
                         coef = "{:.2f}".format(regressor.coef_[0][0])
                         intercept = "{:.2f}".format(regressor.intercept_[0])
                         label_y_coord = max(regressor.predict(loads_pct))

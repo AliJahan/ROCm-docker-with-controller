@@ -79,6 +79,8 @@ class GPUPowerMonitor(threading.Thread):
             return False
 
         return True
+    def get_time_str(self):
+        return datetime.datetime.now.strftime("%Y-%M-%d %H:%M:%S")
 
     def run(self):
         # Collects GPU power data (per gpu) and calculates the average for the collected data
@@ -102,27 +104,36 @@ class GPUPowerMonitor(threading.Thread):
                 power[str(i)] = gpu_pow
             # reading error checking
             if error_reading:
-                print(f"Error reading powers of at least one GPU {num_reading_errors}/{max_errors}")
+                now_time = self.get_time_str()
+                print(f"@{now_time}: Error reading powers of at least one GPU {num_reading_errors}/{max_errors}")
                 # maybe the rocm-smi has issues? end power reading
                 if num_reading_errors > max_errors:
-                    print(f"Error reading powers of at least one GPU for {num_reading_errors} consecutive times. Stopping!")
+                    print(f"@{now_time}: Error reading powers of at least one GPU for {num_reading_errors} consecutive times. Stopping!")
                     break
                 num_reading_errors += 1
                 continue
             # resert number of consec. errors
             num_reading_errors = 0
-            # calc. avg. and update    
-            if self.queue.empty(): # no avg for the first sample
-                nb_samples = 1
-                self.queue.put((1, power))
-            else:
-                prev_powers = self.queue.get()
-                log += str(prev_powers) + "\n"
+            # calc. avg. and update
+            prev_powers = None
+
+            with self.lock:
+                if self.queue.empty(): # no avg for the first sample
+                    nb_samples = 1
+                    self.queue.put((1, power))
+                else:
+                    prev_powers = self.queue.get()
+                    log += str(prev_powers) + "\n"
                 # prev_powers = self.queue.put(prev_powers)
                 # calc. avg.
                 # print(f"{(prev_powers[1] * prev_powers[0] + power) / (prev_powers[0] +1 )} = {prev_powers[1]} * {prev_powers[0]} + {power} / ({prev_powers[0]} +1) ", flush=True)
-                for i in range(self.num_gpus):
-                    power[str(i)] = int(float(prev_powers[1][str(i)] * prev_powers[0] + power[str(i)]) / float(prev_powers[0] +1))
+            if prev_powers is None:
+                now_time = self.get_time_str()
+                print(f"@{now_time}: Error reading proviously sampled powers stopping")
+                break
+
+            for i in range(self.num_gpus):
+                power[str(i)] = int(float(prev_powers[1][str(i)] * prev_powers[0] + power[str(i)]) / float(prev_powers[0] +1))
                 # prev_powers = self.queue.get()
             nb_samples += 1
                 
@@ -174,8 +185,15 @@ class GPUPowerMonitor(threading.Thread):
         return power
     def get_avg_power(self):
         # Multiprocess queue communication for getting power data 
-        powers = self.queue.get()[1]
+        powers = None
+        with self.lock:
+            powers = self.queue.get()[1]
         total = 0
+        if powers is None:
+            now_time = self.get_time_str()
+            print(f"@{now_time}: Error could not get avg. power from sampling thread!")
+            return None
+        
         for i in powers:
             total += powers[i]
         powers['total'] = total

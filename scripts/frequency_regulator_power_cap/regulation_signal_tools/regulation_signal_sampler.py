@@ -43,7 +43,8 @@ class RSSampler: # Regulation Signal Sampler
         for start in range(new_len):
             sample = truncated[start*ratio:(start+1)*ratio]
             sampled.append(sum(sample)/len(sample))
-            
+        
+        
         for ind in range(0, len(sampled)-1):
             if abs(sampled[ind]-sampled[ind+1]) > diff:
                 print(f"{sampled[ind]} and {sampled[ind+1]}")

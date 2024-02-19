@@ -5,7 +5,8 @@ sys.path.insert(1, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) 
 
 from utils.stat_collectors.power_collector import PowerCollector
 from utils.workload_runners.workload_runner_remote import RemoteDockerRunner, RemoteWorkloadRunner
-from utils.resource_managers.resource_manager import GPUResourceManager
+from utils.resource_managers.resource_manager_distributed import GPUResourceManagerDistributed
+from utils.resource_managers.resource_manager_packed import GPUResourceManagerPacked
 
 class RemoteExperimentRunner:
     power_collector = None
@@ -22,7 +23,7 @@ class RemoteExperimentRunner:
             remote_workload_ctl_port: str = "3000",
             target_docker_ctrl_port: str = "4000",
             target_power_broadcaster_port: str = "6000",
-            
+            cu_masking_policy: str = "packed"
         ):
         self.RESULTS_DIR = "/workspace/results"
         self.LOGS_DIR = "/workspace/experiment_logs"
@@ -47,11 +48,19 @@ class RemoteExperimentRunner:
             target_ip=self.target_ip,
             remote_workload_control_port=self.remote_workload_ctl_port
         )
-        
-        self.resource_controller = GPUResourceManager(
-            remote_control_ip=remote_ip,
-            remote_control_port=remote_resource_ctl_port
-        )
+        if cu_masking_policy == "packed":
+            self.resource_controller = GPUResourceManagerPacked(
+                remote_control_ip=remote_ip,
+                remote_control_port=remote_resource_ctl_port
+            )
+        elif cu_masking_policy == "distribured":
+            self.resource_controller = GPUResourceManagerDistributed(
+                remote_control_ip=remote_ip,
+                remote_control_port=remote_resource_ctl_port
+            )
+        else:
+            print(f"Unsupported cu_masking_policy ({cu_masking_policy}). Supported: distribured, packed")
+            sys.exit(-1)
 
     def cleanup(self):
         print("Cleaning up the experiment")
@@ -647,6 +656,10 @@ class RemoteExperimentRunner:
                     )
                     print(f"4-Stopping power-broadcaster for {load_pct}%" , flush=True)
                     assert self.docker_runner.stop_docker("power-broadcaster") == True, "Failed! stopping experiments!"
+                    
+                    if qos_data['mean'] > 10000:
+                        print(f"Ignoring the rest of experiments. curr load {load_pct} mean latency is {qos_data['mean']}" , flush=True)
+                        break
                     print(f"---------------------------------------" , flush=True)
                 for g in range(0, gpu):
                     current_cus = self.resource_controller.get_current_cus(gpu=gpu, is_be=False)

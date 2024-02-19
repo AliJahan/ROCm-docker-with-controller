@@ -7,12 +7,13 @@ class GPUWorkloadType(Enum):
     BE = 1
     LC = 2
 
-class GPUResourceManager:
+class GPUResourceManagerPacked:
     SLEEP_AFTER_SEND_MSG_SEC = 1
     resrouce_controller_socket = None
     remote_header = "remote_docker_runner"
     gpus_masks = dict()
     max_num_gpus = 8
+    num_shader_engins = 4
     max_cus = 60
     apps_freq_changed = dict()
     def __init__(
@@ -22,10 +23,17 @@ class GPUResourceManager:
         ):
         self.remote_control_ip = remote_control_ip
         self.remote_control_port = remote_control_port
-        self.resrouce_controller_socket = self.setup_socket()
+
         # Set masks for all GPU masks (MI50 has 60 CUs)
         for i in range(self.max_num_gpus): 
-            self.gpus_masks[i] = {GPUWorkloadType.BE: list(), GPUWorkloadType.LC: list(), GPUWorkloadType.FREE: [i for i in range(1, self.max_cus+1)]}
+            self.gpus_masks[i] = {GPUWorkloadType.BE: dict(), GPUWorkloadType.LC: dict(), GPUWorkloadType.FREE: dict()}
+        for i in range(self.max_num_gpus): 
+            for se in range(self.num_shader_engins): # MI50 has 4 shader engines (se)
+                self.gpus_masks[i][GPUWorkloadType.FREE][se] = [(se+1)+self.num_shader_engins*k for k in range(15)] # MI50 has 15 CUs per shader
+                self.gpus_masks[i][GPUWorkloadType.BE][se] = list()
+                self.gpus_masks[i][GPUWorkloadType.LC][se] = list()
+
+        self.resrouce_controller_socket = self.setup_socket()
 
     def convert_bin2hex_str(self, bin_str):
         _hex = str(hex(int(bin_str, 2)))[2:]
@@ -34,18 +42,29 @@ class GPUResourceManager:
             _hex = '0'+_hex
         return _hex
     def generate_bin_str(self, cu_list):
+        cu_list_all = list()
+        for se in range(self.num_shader_engins):
+            cu_list_all += cu_list[se]
+
         mask = ""
         for i in range(64,0,-1):
-            if i in cu_list:
+            if i in cu_list_all:
                 mask += '1'
             else:
                 mask += '0'
         return mask
+
     def get_current_cus(self, gpu: int, is_be = False):
+        cur_cus = 0
+
         if is_be:
-            return len(self.gpus_masks[gpu][GPUWorkloadType.BE])
+            for se in range(self.num_shader_engins):
+                cur_cus += len(self.gpus_masks[gpu][GPUWorkloadType.BE][se])
         else:
-            return len(self.gpus_masks[gpu][GPUWorkloadType.LC])
+            for se in range(self.num_shader_engins):
+                cur_cus += len(self.gpus_masks[gpu][GPUWorkloadType.LC][se])
+
+        return cur_cus
 
     def add_cu(self, app_name: str, gpu: int, cus: int, is_be = False):
         if cus < 0:
@@ -54,21 +73,39 @@ class GPUResourceManager:
         if gpu not in self.gpus_masks:
             print(f"\t- [GPUResourceManager]: ERROR requested gpu ({gpu}) is not available!")
             return False
-        if len(self.gpus_masks[gpu][GPUWorkloadType.FREE]) < cus:
-            print(f"\t- [GPUResourceManager]: ERROR requested cus ({cus}) is less than the available cus({len(self.gpus_masks[gpu][GPUWorkloadType.FREE])})")
+
+        total_avail_cus = 0
+        for se in range(self.num_shader_engins):
+            total_avail_cus += len(self.gpus_masks[gpu][GPUWorkloadType.FREE][se])
+
+        if total_avail_cus < cus:
+            print(f"\t- [GPUResourceManager]: ERROR requested cus ({cus}) is less than the available cus({total_avail_cus})")
             return False
-        
-        self.gpus_masks[gpu][GPUWorkloadType.FREE] = sorted(self.gpus_masks[gpu][GPUWorkloadType.FREE])
 
         mask = ""
         if is_be:
-            self.gpus_masks[gpu][GPUWorkloadType.BE] += self.gpus_masks[gpu][GPUWorkloadType.FREE][-cus:]
-            self.gpus_masks[gpu][GPUWorkloadType.FREE] = self.gpus_masks[gpu][GPUWorkloadType.FREE][:-cus]
+            cus_needed = cus
+            while cus_needed:
+                for se in range(self.num_shader_engins-1, -1, -1): # for BE we pick cus from higher indexed SEs
+                    if len(self.gpus_masks[gpu][GPUWorkloadType.FREE][se]) > 0:
+                        self.gpus_masks[gpu][GPUWorkloadType.FREE][se] = sorted(self.gpus_masks[gpu][GPUWorkloadType.FREE][se])
+                        self.gpus_masks[gpu][GPUWorkloadType.BE][se].append(self.gpus_masks[gpu][GPUWorkloadType.FREE][se][-1])
+                        self.gpus_masks[gpu][GPUWorkloadType.FREE][se].pop()
+                        cus_needed -= 1
+                        break
             mask = self.generate_bin_str(self.gpus_masks[gpu][GPUWorkloadType.BE])
         else:
-            self.gpus_masks[gpu][GPUWorkloadType.LC] += self.gpus_masks[gpu][GPUWorkloadType.FREE][:cus]
-            self.gpus_masks[gpu][GPUWorkloadType.FREE] = self.gpus_masks[gpu][GPUWorkloadType.FREE][cus:]
+            cus_needed = cus
+            while cus_needed:
+                for se in range(self.num_shader_engins): # for LC we pick cus from lower indexed SEs
+                    if len(self.gpus_masks[gpu][GPUWorkloadType.FREE][se]) > 0:
+                        self.gpus_masks[gpu][GPUWorkloadType.FREE][se] = sorted(self.gpus_masks[gpu][GPUWorkloadType.FREE][se])
+                        self.gpus_masks[gpu][GPUWorkloadType.LC][se].append(self.gpus_masks[gpu][GPUWorkloadType.FREE][se][0])
+                        self.gpus_masks[gpu][GPUWorkloadType.FREE][se].pop(0)
+                        cus_needed -= 1
+                        break
             mask = self.generate_bin_str(self.gpus_masks[gpu][GPUWorkloadType.LC])
+
         assert len(mask) == 64, f"generated mask: {mask} is longer than 64 bits!"
         mask1 = self.convert_bin2hex_str(mask[:32])
         mask0 = self.convert_bin2hex_str(mask[32:])
@@ -81,6 +118,7 @@ class GPUResourceManager:
             cumask_full_hex0=mask0,
             cumask_full_hex1=mask1
         )
+
     def remove_cu(self, app_name: str, gpu: int, cus: int, is_be = False):
         if cus < 0:
             print(f"\t- [GPUResourceManager]: ERROR requested cus ({cus}) is less than zero")
@@ -92,25 +130,41 @@ class GPUResourceManager:
         if gpu not in self.gpus_masks:
             print(f"\t- [GPUResourceManager]: ERROR requested gpu ({gpu}) is not available!")
             return False
+        
+        total_owned_cus = 0
+        if is_be:
+            for se in range(self.num_shader_engins):
+                total_owned_cus += len(self.gpus_masks[gpu][GPUWorkloadType.BE][se])
+        else:
+            for se in range(self.num_shader_engins):
+                total_owned_cus += len(self.gpus_masks[gpu][GPUWorkloadType.LC][se])
 
-        if is_be and len(self.gpus_masks[gpu][GPUWorkloadType.BE]) < cus:
-            print(f"\t- [GPUResourceManager]: ERROR requested cus ({cus}) is less than the available cus to remove ({len(self.gpus_masks[gpu][GPUWorkloadType.BE])})")
+        if total_owned_cus < cus:
+            print(f"\t- [GPUResourceManager]: ERROR requested cus ({cus}) is less than the available cus to remove ({total_owned_cus})")
             return False
-
-        if not is_be and len(self.gpus_masks[gpu][GPUWorkloadType.LC]) < cus:
-            print(f"\t- [GPUResourceManager]: ERROR requested cus ({cus}) is less than the available cus to remove ({len(self.gpus_masks[gpu][GPUWorkloadType.LC])})")
-            return False
-
         mask = ""
         if is_be:
-            self.gpus_masks[gpu][GPUWorkloadType.BE] = sorted(self.gpus_masks[gpu][GPUWorkloadType.BE])
-            self.gpus_masks[gpu][GPUWorkloadType.FREE] += self.gpus_masks[gpu][GPUWorkloadType.BE][:cus]
-            self.gpus_masks[gpu][GPUWorkloadType.BE] = self.gpus_masks[gpu][GPUWorkloadType.BE][cus:]
+            cus_released = cus
+            while cus_released:
+                for se in range(self.num_shader_engins): # for BE we release cus from lower indexed SEs
+                    if len(self.gpus_masks[gpu][GPUWorkloadType.BE][se]) > 0:
+                        self.gpus_masks[gpu][GPUWorkloadType.BE][se] = sorted(self.gpus_masks[gpu][GPUWorkloadType.BE][se])
+                        self.gpus_masks[gpu][GPUWorkloadType.FREE][se].append(self.gpus_masks[gpu][GPUWorkloadType.BE][se][0])
+                        self.gpus_masks[gpu][GPUWorkloadType.BE][se].pop(0)
+                        cus_released -= 1
+                        break
             mask = self.generate_bin_str(self.gpus_masks[gpu][GPUWorkloadType.BE])
         else:
-            self.gpus_masks[gpu][GPUWorkloadType.LC] = sorted(self.gpus_masks[gpu][GPUWorkloadType.LC])
-            self.gpus_masks[gpu][GPUWorkloadType.FREE] += self.gpus_masks[gpu][GPUWorkloadType.LC][-cus:]
-            self.gpus_masks[gpu][GPUWorkloadType.LC] = self.gpus_masks[gpu][GPUWorkloadType.LC][:-cus]
+            cus_released = cus
+            while cus_released:
+                for se in range(self.num_shader_engins-1, -1, -1): # for LC we pick cus from lower indexed SEs
+                    if len(self.gpus_masks[gpu][GPUWorkloadType.LC][se]) > 0:
+                        self.gpus_masks[gpu][GPUWorkloadType.LC][se] = sorted(self.gpus_masks[gpu][GPUWorkloadType.LC][se])
+                        self.gpus_masks[gpu][GPUWorkloadType.FREE][se].append(self.gpus_masks[gpu][GPUWorkloadType.LC][se][-1])
+                        self.gpus_masks[gpu][GPUWorkloadType.LC][se].pop()
+                        cus_released -= 1
+                        break
+            
             mask = self.generate_bin_str(self.gpus_masks[gpu][GPUWorkloadType.LC])
 
         assert len(mask) == 64, f"generated mask: {mask} is longer than 64 bits!"
@@ -182,38 +236,24 @@ class GPUResourceManager:
         for app_name in self.apps_freq_changed: # app_name unnecessary since freq is set per gpu
             for gpu in self.apps_freq_changed[app_name]:
                 self.set_freq(app_name=app_name, gpu=gpu, freq=225)
-
-def test_resrouce_manager():
-    mgr = GPUResourceController()
+def test_resrouce_manager_packet():
+    mgr = GPUResourceManagerPacked()
+    # return
     print("Adding BE")
     # time.sleep(10)
-    for i in range(6):
+    for i in range(3):
         print(f"{i}--- add 5 to BE")
-        mgr.add_cu("asd", 0, 5, True)
+        mgr.add_cu("asd", 0, 60, True)
+        input()
         print(f"{i}--- remove 2 from BE")
-        mgr.remove_cu("asd", 0, 2, True)
+        mgr.remove_cu("asd", 0, 48, True)
+        input()
         print(f"{i}--- add 4 to LC")
-        mgr.add_cu("asd", 0, 4, False)
+        mgr.add_cu("asd", 0, 50, False)
         print(f"{i}--- remove 3 from LC")
-        mgr.remove_cu("asd", 0, 3, False)
+        mgr.remove_cu("asd", 0, 48, False)
         print(f"@@@@---@@@")
     
-    # print(f"REMOVING---")
-    
-    # for i in range(6):
-        
-    #     print(f"{i}---")
-    return
-
-    print("Adding LC")
-    for i in range(9):
-        mgr.add_cu("asd", 0, 5, False)
-        print(f"{i}---")
-    mgr.add_cu("asd", 0, 4, False)
-    print(mgr.add_cu("asd", 0, 1, True))
-    
-    # mgr.set_freq("Inference-Server", 0, 225)
-    # time.sleep(1000)
-
 if __name__ == "__main__":
-    test_resrouce_manager()
+    # test_resrouce_manager()
+    test_resrouce_manager_packet()

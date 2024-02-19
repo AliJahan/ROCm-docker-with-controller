@@ -2,7 +2,7 @@ import sys
 sys.path.insert(1, '../../') # for utils TODO: make it a wheel
 
 from utils.stat_collectors.lc_load_collector import LCLoadCollector
-from utils.resource_managers.resource_manager import GPUResourceManager
+from scripts.utils.resource_managers.resource_manager_packed import GPUResourceManagerPacked
 from utils.workload_runners.workload_runner_remote import RemoteDockerRunner, RemoteWorkloadRunner
 
 
@@ -42,7 +42,7 @@ class FRWorkloadController:
             be_workload_name=be_workload_name
         )
         
-        self.resource_controller = GPUResourceManager(
+        self.resource_controller = GPUResourceManagerPacked(
             remote_control_ip=remote_ip,
             remote_control_port=remote_resource_ctl_port
         )

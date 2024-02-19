@@ -30,6 +30,9 @@ def broadcast_power(publish_socket, cpu_read_interval_msec, gpu_read_interval_ms
     print("Broadcasting the power...")
     while True:
         gpu_power = gpu_mon.get_avg_power()
+        if gpu_power is None:
+            print(f"[Power-broadcaster]: Error could not get avg. power from GPU monitor!")
+            break
         cpu_power = cpu_mon.get_avg_power()
         server_power = cpu_power + gpu_power['total']
         message = "{ \"cpu\": " + str(cpu_power) +", \"gpu\": "+ json.dumps(gpu_power) +", \"total\": " + str(server_power) + "}"
@@ -49,7 +52,7 @@ def broadcast_power(publish_socket, cpu_read_interval_msec, gpu_read_interval_ms
 
 def main():
     cpu_read_interval_msec = 500
-    gpu_read_interval_msec = 500
+    gpu_read_interval_msec = 250
     broad_cast_interval_sec = 1
     port = "6000"
     if len(sys.argv) == 2:
