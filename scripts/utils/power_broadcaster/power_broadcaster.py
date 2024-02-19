@@ -31,7 +31,7 @@ def broadcast_power(publish_socket, cpu_read_interval_msec, gpu_read_interval_ms
     while True:
         gpu_power = gpu_mon.get_avg_power()
         if gpu_power is None:
-            print(f"[Power-broadcaster]: Error could not get avg. power from GPU monitor!")
+            print(f"[Power-broadcaster]: Error could not get avg. power from GPU monitor!", flush=True)
             break
         cpu_power = cpu_mon.get_avg_power()
         server_power = cpu_power + gpu_power['total']
@@ -42,10 +42,11 @@ def broadcast_power(publish_socket, cpu_read_interval_msec, gpu_read_interval_ms
             publish_socket.send(message.encode('utf-8'))
         except zmq.ZMQError as e:
             if e.errno == zmq.ETERM:
-                print("ZMQ socket interrupted/terminated, Quitting...")
+                print("ZMQ socket interrupted/terminated, Quitting...", flush=True)
             else:
-                print(f"ZMQ socket error: {e}, Quitting...")
+                print(f"ZMQ socket error: {e}, Quitting...", flush=True)
             break
+        print(f"@{gpu_mon.get_time_str()}: published GPU&CPU powers", flush=True)
         time.sleep(broad_cast_interval_sec)
     cpu_mon.stop()
     gpu_mon.stop()
