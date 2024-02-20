@@ -190,15 +190,15 @@ class LCRemoteRunner:
                     else:
                         print("lc_runner is not running, ignoring msg", flush=True)
                 elif cmd == "pause_gpu": #pause_gpu:model:gpu
-                    model, gpus= args
+                    model, gpu= args
                     if self.lc_runner is not None:
-                        self.lc_runner.pause_worker(model=model, gpus=gpus)
+                        self.lc_runner.pause_worker(model=model, gpu=gpu)
                     else:
                         print("lc_runner is not running, ignoring msg", flush=True)
                 elif cmd == "resume_gpu": #pause_gpu:model:gpu
-                    model, gpus= args
+                    model, gpu= args
                     if self.lc_runner is not None:
-                        self.lc_runner.resume_worker(model=model, gpus=gpus)
+                        self.lc_runner.resume_worker(model=model, gpu=gpu)
                     else:
                         print("lc_runner is not running, ignoring msg", flush=True)
             

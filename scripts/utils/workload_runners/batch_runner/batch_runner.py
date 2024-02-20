@@ -193,6 +193,7 @@ class BatchRemoteRunner:
                     if gpu in self.be_runners == False:
                         self.be_runners[gpu] = BatchRunner()
                         self.be_runners[gpu].run(gpu)
+                        self.be_runners[gpu].suspend()
                     else:
                         print("be_runner already running, ignoring msg", flush=True)
                 if cmd == "remove_gpu": #remove_gpu:gpu
