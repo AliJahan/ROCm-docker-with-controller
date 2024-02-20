@@ -25,27 +25,30 @@ class BatchRunner:
         # threading.Thread.__init__(self)
 
     def run(self, gpu: int):
-        cmd = self.run_cmd + str(gpu+1)
+        cmd = self.run_cmd + str(int(gpu)+1)
         # CUMASKING_CONTROLLER_LOG is set for cumasking controller (required for rocr to activate cumasking)
         env = {
             **os.environ,
             "CUMASKING_CONTROLLER_LOG": f"{self.logs_dir}/be_rocr"
         }
 
-        self.proc_log_file = open(f"{self.logs_dir}/lc_run_log_g{gpu+1}", 'w')
+        # self.proc_log_file = open(f"{self.logs_dir}/be_run_log_g{int(gpu)+1}", 'w')
         p = subprocess.Popen(
             cmd.split(" "),
             env=env,
-            stdout=self.proc_log_file,
+            # stdout=self.proc_log_file,
+            stdout=subprocess.PIPE,
             stdin=subprocess.PIPE,
-            stderr=self.proc_log_file
+            # stderr=self.proc_log_file
+            stderr=subprocess.PIPE
         )
         
         ps = psutil.Process(pid=p.pid)
         with self.lock:
-            self.throughput_reader_thread = threading.Thread(target=self.throughput_reader)
-            self.throughput_reader_thread.start()
             self.procs = (p, ps)
+            self.throughput_reader_thread = threading.Thread(target=self.throughput_reader)
+        self.throughput_reader_thread.start()
+            
     
     def run_and_suspend(self, gpu):
         self.run(gpu)
@@ -122,8 +125,8 @@ class BatchRunner:
         if self.procs is not None:
             if self.procs[1].is_running():
                 self.procs[1].kill()
-                self.proc_log_file.close()
-                self.proc_log_file = None
+                # self.proc_log_file.close()
+                # self.proc_log_file = None
         with self.lock:
             self.throughput_reader_thread = None
             self.procs = None
@@ -190,16 +193,15 @@ class BatchRemoteRunner:
                     continue
                 if cmd == "add_gpu": #add_gpu:gpu
                     gpu = args[0]
-                    if gpu in self.be_runners == False:
+                    if gpu not in self.be_runners:
                         self.be_runners[gpu] = BatchRunner()
                         self.be_runners[gpu].run(gpu)
-                        self.be_runners[gpu].suspend()
                     else:
-                        print("be_runner already running, ignoring msg", flush=True)
-                if cmd == "remove_gpu": #remove_gpu:gpu
+                        print(f"be_runner already running on gpu {gpu}, ignoring msg", flush=True)
+                elif cmd == "remove_gpu": #remove_gpu:gpu
                     gpu = args[0]
                     if gpu in self.be_runners == False:
-                        out = self.be_runners[gpu].terminate(gpu)
+                        out = self.be_runners[gpu].terminate()
                         del self.be_runners[gpu]
                         self.be_runners_stats[gpu] = out
                     else:
@@ -217,7 +219,6 @@ class BatchRemoteRunner:
                         self.be_runners[gpu].resume()
                     else:
                         print(f"be_runner does not have be running on gpu {gpu}, ignoring msg", flush=True)
-                
                 elif cmd == "stop": #stop:stat_file
                     stat_file_name = args[0]
                     if len(self.be_runners) > 0:
@@ -229,9 +230,8 @@ class BatchRemoteRunner:
                         break
                     else:
                         print(f"be_runner does not have any be running processes, ignoring msg", flush=True)
-
                 else:
-                    print(f"received unsupported command: {msg}", flush=True)
+                    print(f"received unsupported command: {cmd}", flush=True)
 
         # in case runners exist after finish message.
         if len(self.be_runners) > 0:
