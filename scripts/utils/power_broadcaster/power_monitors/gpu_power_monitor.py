@@ -121,6 +121,7 @@ class GPUPowerMonitor(threading.Thread):
                 nb_samples = 1
                 self.queue.put((1, power))
             else:
+                assert self.queue.qsize() == 1, f"power queue size {self.queue.qsize()}, has to be 1"
                 prev_powers = self.queue.get()
                 log += str(prev_powers) + "\n"
                 for i in range(self.num_gpus):

@@ -10,7 +10,7 @@ import multiprocessing
 
 
 class BatchRunner:
-    run_cmd = "/workloads/miniMDock/bin/autodock_hip_gpu_64wi -lfile /workloads/miniMDock/input/7cpa/7cpa_ligand.pdbqt -nrun 10000 -fldfile /workloads/miniMDock/input/7cpa/7cpa_protein.maps.fld -devnum "
+    run_cmd = "/workloads/miniMDock/bin/autodock_hip_gpu_64wi -lfile /workloads/miniMDock/input/7cpa/7cpa_ligand.pdbqt -nrun 1000 -fldfile /workloads/miniMDock/input/7cpa/7cpa_protein.maps.fld -devnum "
     procs = None
     lock = threading.Lock()
     throughput_reader_running = False
@@ -47,7 +47,7 @@ class BatchRunner:
         with self.lock:
             self.procs = (p, ps)
             self.throughput_reader_thread = threading.Thread(target=self.throughput_reader)
-        self.throughput_reader_thread.start()
+            self.throughput_reader_thread.start()
             
     
     def run_and_suspend(self, gpu):
@@ -64,9 +64,11 @@ class BatchRunner:
         for i in output_lines:
             sum += float(i)
         avg = float(sum)/len(output_lines)
+        num_samples = 0
         with self.lock:
             self.total_tp = ((self.total_tp[0]*self.total_tp[1]+sum)/(self.total_tp[1]+len(output_lines)), self.total_tp[1]+len(output_lines))
-        return avg
+            num_samples = self.total_tp[1]
+        return avg, num_samples
 
     def throughput_reader(self):
         with self.lock:
@@ -98,8 +100,9 @@ class BatchRunner:
         while self.throughput_queue.empty() == False:
             line = self.throughput_queue.get()
             lines.append(line)
-        avg_throughput = self.calculate_average(lines)
-        return 1000.0/avg_throughput if avg_throughput != 0.0 else 0.0 # for miniMDock TP is msec/iteration. Convert to iter/sec
+        avg_throughput, num_samples = self.calculate_average(lines)
+        avg_tp = 1000.0/avg_throughput if avg_throughput != 0.0 else 0.0 # for miniMDock TP is msec/iteration. Convert to iter/sec
+        return avg_tp, num_samples
             
     
     def suspend(self):
@@ -122,6 +125,9 @@ class BatchRunner:
         with self.lock:
             self.throughput_reader_running = False
 
+        if self.throughput_reader_thread is not None:
+            self.throughput_reader_thread.join()
+
         if self.procs is not None:
             if self.procs[1].is_running():
                 self.procs[1].kill()
@@ -130,11 +136,9 @@ class BatchRunner:
         with self.lock:
             self.throughput_reader_thread = None
             self.procs = None
-        tp = None
-        with self.lock:
-            tp = self.total_tp
-        avg_tp = 1000.0/tp[0] if tp[0] != 0.0 else 0.0
-        return {"total_avg": avg_tp, "num_iterations": tp[1], "unit": "iteration_per_sec"}
+
+        avg_tp, n_samples= self.get_throughput_since_last_get()
+        return {"total_avg": avg_tp, "num_iterations": n_samples, "unit": "iteration_per_sec"}
 
 
 class BatchRemoteRunner:
@@ -142,6 +146,7 @@ class BatchRemoteRunner:
     be_runners_stats = dict()
     socket_poller = None
     subscriber_socket = None
+    wrote_state_header = False
     def __init__(self, control_ip: str, control_port: str = "45678", app_name: str = "miniMDock"):
         self.ctx = None
         self.app_name = app_name
@@ -221,12 +226,16 @@ class BatchRemoteRunner:
                         print(f"be_runner does not have be running on gpu {gpu}, ignoring msg", flush=True)
                 elif cmd == "stop": #stop:stat_file
                     stat_file_name = args[0]
+                    other_args = list()
+                    if len(args) > 1:
+                        other_args = args[1:]
                     if len(self.be_runners) > 0:
-                        for gpu in self.be_runners:
+                        gpus_list = list(self.be_runners.keys())
+                        for gpu in gpus_list:
                             out = self.be_runners[gpu].terminate()
                             del self.be_runners[gpu]
                             self.be_runners_stats[gpu] = out
-                        self.dump_stats(stat_file_name)
+                        self.dump_stats(other_args, stat_file_name)
                         break
                     else:
                         print(f"be_runner does not have any be running processes, ignoring msg", flush=True)
@@ -241,17 +250,30 @@ class BatchRemoteRunner:
                 self.be_runners_stats[gpu] = out
         print("Remote BERunner shut down!", flush=True)
 
-    def dump_stats(self, file_name: str):
+    def dump_stats(self, args, file_name: str):
         print(f"Saving stats to: {file_name}")
-        f = open(file_name, 'w')
-        f.write("gpu,avg_through_put,iterations,unit\n")
-        with self.lock:
-            for gpu in self.be_runners_stats:
-                gpu_out = self.be_runners_stats[gpu]
-                avg_tp = gpu_out["total_avg"]
-                iterations = gpu_out["num_iterations"]
-                unit = gpu_out["unit"]
-                f.write(f"{gpu},{avg_tp},{iterations},{unit}\n")
+        # Create path of stats
+        path = file_name[:file_name.rfind("/")]
+        os.makedirs(path, exist_ok=True)
+        # create stats file if does not exists, if exists, append to it.
+        create = True
+        if os.path.isfile(file_name):
+                create = False
+        f = open(file_name, 'w' if create else 'a')
+        if create:
+            f.write("gpu,avg_through_put,iterations,unit,args\n")
+
+        for gpu in self.be_runners_stats:
+            gpu_out = self.be_runners_stats[gpu]
+            avg_tp = gpu_out["total_avg"]
+            iterations = gpu_out["num_iterations"]
+            unit = gpu_out["unit"]
+            f.write(f"{gpu},{avg_tp},{iterations},{unit}")
+            args_str = ","
+            for arg in args:
+                args_str += f"{arg},"
+            args_str = args_str[:-1] + "\n"
+            f.write(args_str)
         f.close()
         print(f"Saving stats done")
 

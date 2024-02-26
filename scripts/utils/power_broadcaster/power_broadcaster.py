@@ -46,14 +46,14 @@ def broadcast_power(publish_socket, cpu_read_interval_msec, gpu_read_interval_ms
             else:
                 print(f"ZMQ socket error: {e}, Quitting...", flush=True)
             break
-        print(f"@{gpu_mon.get_time_str()}: published GPU&CPU powers", flush=True)
+        print(f"@{gpu_mon.get_time_str()}: published GPU: {gpu_power} & CPU powers", flush=True)
         time.sleep(broad_cast_interval_sec)
     cpu_mon.stop()
     gpu_mon.stop()
 
 def main():
     cpu_read_interval_msec = 500
-    gpu_read_interval_msec = 250
+    gpu_read_interval_msec = 50
     broad_cast_interval_sec = 1
     port = "6000"
     if len(sys.argv) == 2:
