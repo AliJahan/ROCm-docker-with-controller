@@ -224,21 +224,24 @@ class BatchRemoteRunner:
                         self.be_runners[gpu].resume()
                     else:
                         print(f"be_runner does not have be running on gpu {gpu}, ignoring msg", flush=True)
-                elif cmd == "stop": #stop:stat_file
-                    stat_file_name = args[0]
-                    other_args = list()
-                    if len(args) > 1:
-                        other_args = args[1:]
+                elif cmd == "stop": #stop:key1:value1:key2:value2:... (no trailing colon)
                     if len(self.be_runners) > 0:
                         gpus_list = list(self.be_runners.keys())
                         for gpu in gpus_list:
                             out = self.be_runners[gpu].terminate()
                             del self.be_runners[gpu]
                             self.be_runners_stats[gpu] = out
-                        self.dump_stats(other_args, stat_file_name)
-                        break
+                    if len(args) > 1:
+                        # create dict of args
+                        args_dict = dict()
+                        for i in range(0, len(args)-1, 2):
+                            args_dict[args[i]] = args[i+1]
+                        stat_file_name = args_dict['stat_file']
+                        del args_dict['stat_file']
+                        self.dump_stats(args_dict, stat_file_name)
                     else:
                         print(f"be_runner does not have any be running processes, ignoring msg", flush=True)
+                    break
                 else:
                     print(f"received unsupported command: {cmd}", flush=True)
 
@@ -261,7 +264,11 @@ class BatchRemoteRunner:
                 create = False
         f = open(file_name, 'w' if create else 'a')
         if create:
-            f.write("gpu,avg_through_put,iterations,unit,args\n")
+            header = "gpu,avg_through_put,iterations,unit"
+            for arg_name in list(args.keys()):
+                header += ","+str(arg_name)
+            header += "\n"
+            f.write(header)
 
         for gpu in self.be_runners_stats:
             gpu_out = self.be_runners_stats[gpu]
@@ -269,10 +276,10 @@ class BatchRemoteRunner:
             iterations = gpu_out["num_iterations"]
             unit = gpu_out["unit"]
             f.write(f"{gpu},{avg_tp},{iterations},{unit}")
-            args_str = ","
-            for arg in args:
-                args_str += f"{arg},"
-            args_str = args_str[:-1] + "\n"
+            args_str = ""
+            for arg_name in list(args.keys()):
+                args_str += f",{args[arg_name]}"
+            args_str +=  "\n"
             f.write(args_str)
         f.close()
         print(f"Saving stats done")
