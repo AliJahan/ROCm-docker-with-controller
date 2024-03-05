@@ -15,8 +15,10 @@ class RemoteDockerRunner:
             target_ip: str,
             target_docker_control_port: str,
             remote_workload_control_port: str,
-            remote_resource_ctl_port: str
+            remote_resource_ctl_port: str,
+            debug = False
     ):
+        self.debug = debug
         self.remote_ip = remote_ip
         self.target_ip = target_ip
         self.target_docker_control_port = target_docker_control_port
@@ -25,10 +27,13 @@ class RemoteDockerRunner:
         self.docker_controller_socket = self.setup_socket()
 
     def setup_socket(self):
+        if self.debug:
+            return None
+        self.debug
         self.ctx = zmq.Context.instance()
         publisher = None
         # poller = None
-        print(f"Connecting to {self.target_ip}:{self.target_docker_control_port}... ", end="")
+        print(f"\t- [RemoteDockerRunner]: Connecting to {self.target_ip}:{self.target_docker_control_port}... ", end="")
         try:
             publisher = self.ctx.socket(zmq.DEALER)
             publisher.setsockopt_string(zmq.IDENTITY, self.remote_header)
@@ -40,7 +45,9 @@ class RemoteDockerRunner:
         return None
 
     def send_msg(self, msg):
-        print(f"Sending message: {msg} ... ", end="", flush=True)
+        print(f"\t- [RemoteDockerRunner]: Sending message: {msg} ... ", end="", flush=True)
+        if self.debug:
+            return True
         rep = False
         try:
             self.docker_controller_socket.send_string(f"{msg}")
@@ -89,20 +96,26 @@ class RemoteWorkloadRunner:
             target_ip: str,
             remote_workload_control_port: str,
             lc_workload_name: str = "Inference-Server",
-            be_workload_name: str = "miniMDock"
+            be_workload_name: str = "miniMDock",
+            wait_after_send = True,
+            debug = False
     ):
+        self.debug = debug
         self.remote_ip = remote_ip
         self.target_ip = target_ip
         self.be_workload_name = be_workload_name
         self.lc_workload_name = lc_workload_name
         self.remote_workload_control_port = remote_workload_control_port
+        self.wait_after_send = wait_after_send
         self.publisher_socket = self.setup_socket()
 
     def setup_socket(self):
+        if self.debug:
+            return None
         self.ctx = zmq.Context.instance()
         publisher = None
         # poller = None
-        print(f"Binding to {self.remote_ip}:{self.remote_workload_control_port}... ", end="")
+        print(f"\t- [RemoteWorkloadRunner]: Binding to {self.remote_ip}:{self.remote_workload_control_port}... ", end="")
         try:
             publisher = self.ctx.socket(zmq.PUB)
             publisher.bind(f"tcp://*:{self.remote_workload_control_port}")
@@ -112,7 +125,9 @@ class RemoteWorkloadRunner:
             print(f"Failed! error: {e}")
         return None
 
-    def run_lc_client(self, warmp_first, num_warmpup_load_steps, warmup_step_duration_sec, gpus, max_rps_per_gpu, trace_file, trace_unit_sec):
+    def run_lc_client(self, warmp_first, num_warmpup_load_steps, warmup_step_duration_sec, gpus, max_rps_per_gpu, trace_file, trace_unit_sec, no_run = False):
+        if self.debug:
+            return None
         client = LCClientRunnerWarpper(
             num_warmpup_load_steps=num_warmpup_load_steps,
             warmup_step_duration_sec=warmup_step_duration_sec,
@@ -124,11 +139,15 @@ class RemoteWorkloadRunner:
 
         if warmp_first == True:
             client.warmup(server_ip=self.target_ip)
-        
+
+        if no_run is True:
+            return None
         return client.run(server_ip=self.target_ip)
 
     def send_msg(self, channel, msg):
-        print(f"\t- Sending message: ({channel}) {msg} ... ", end="", flush=True)
+        print(f"\t- [RemoteWorkloadRunner]: sending message: ({channel}) {msg} ... ", end="", flush=True)
+        if self.debug:
+            return True
         rep = True
         try:
             self.publisher_socket.send_string(f"{channel}", flags=zmq.SNDMORE)
@@ -141,7 +160,7 @@ class RemoteWorkloadRunner:
                 print(f"FAILED! error: ZMQ socket error: {e}", flush=True)
             rep = False
 
-        if rep == True:
+        if rep == True and self.wait_after_send:
             time.sleep(self.SLEEP_AFTER_SEND_MSG_SEC)
             print(f"Done!") 
 
@@ -157,9 +176,9 @@ class RemoteWorkloadRunner:
     def add_gpu(self, is_be_wl, args):
         msg = f"add_gpu:"
         if is_be_wl:
-            msg += args["gpu"]
+            msg += str(args["gpu"])
         else:
-            msg += args['model']+":"+args['gpu']+":"+args['batch_size']
+            msg += str(args['model'])+":"+str(args['gpu'])+":"+str(args['batch_size'])
 
         channel = self.get_channel(is_be_wl=is_be_wl)
         res = self.send_msg(channel, msg)
@@ -169,9 +188,9 @@ class RemoteWorkloadRunner:
     def pause_gpu(self, is_be_wl, args):
         msg = f"pause_gpu:"
         if is_be_wl:
-            msg += args["gpu"]
+            msg += str(args["gpu"])
         else:
-            msg += args['model']+":"+args['gpu']
+            msg += str(args['model'])+":"+str(args['gpu'])
 
         channel = self.get_channel(is_be_wl=is_be_wl)
         return self.send_msg(channel, msg)
@@ -179,9 +198,9 @@ class RemoteWorkloadRunner:
     def remove_gpu(self, is_be_wl, args):
         msg = f"remove_gpu:"
         if is_be_wl:
-            msg += args["gpu"]
+            msg += str(args["gpu"])
         else:
-            msg += args['model']+":"+args['gpu']
+            msg += str(args['model'])+":"+str(args['gpu'])
         
         channel = self.get_channel(is_be_wl=is_be_wl)
         return self.send_msg(channel, msg)
@@ -189,7 +208,11 @@ class RemoteWorkloadRunner:
     def finsh_wl(self, is_be_wl, args):
         msg = f"stop:"
         if is_be_wl:
-            msg += args['stat_file']
+            args_list = list(args.keys())
+            # append key:value
+            for arg_key in args_list:
+                msg += arg_key+":"+str(args[arg_key])+":"
+            msg = msg[:-1]
 
         channel = self.get_channel(is_be_wl=is_be_wl)
         return self.send_msg(channel, msg)
@@ -197,9 +220,9 @@ class RemoteWorkloadRunner:
     def resume_gpu(self, is_be_wl, args):
         msg = f"resume_gpu:"
         if is_be_wl:
-            msg += args['gpu']
+            msg += str(args['gpu'])
         else:
-            msg += args['model']+":"+args['gpu']
+            msg += str(args['model'])+":"+str(args['gpu'])
 
         channel = self.get_channel(is_be_wl=is_be_wl)
         return self.send_msg(channel, msg)

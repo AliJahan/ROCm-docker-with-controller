@@ -51,10 +51,19 @@ class RSSampler: # Regulation Signal Sampler
                 return [sampled, False]
         
         return [sampled, True]
-
+    def get_chunk(self, num_chunks: int, chunk_ind: int):
+        if chunk_ind >= num_chunks:
+            print(f"[RSSampler/chunker]: chunk index {chunk_ind} has to be in range [0,{num_chunks})", flush=True)
+            return [None, False]
+        if self.rs_len % num_chunks is not 0:
+            print(f"[RSSampler/chunker]: RS signal length ({self.rs_len}) not divisible number of requested chunks ({chunk_ind})", flush=True)
+            return [None, False]
+        
+        chunk = self.rs_file_data[chunk_ind*(self.rs_len//num_chunks):(chunk_ind+1)*(self.rs_len//num_chunks)]
+        return [chunk, True]
 
 def test_sample():
-    file_path = "/home/ajaha004/repos/ROCm-docker-with-controller/scripts/frequency_regulator/data/highreg"
+    file_path = "/home/ajaha004/repos/ROCm-docker-with-controller/scripts/frequency_regulator_power_cap/data/reg_sig_highreg"
     sampler = RSSampler(rs_file_path=file_path)
     
     print(sampler.sample(1800)[1])
@@ -62,5 +71,17 @@ def test_sample():
     print(sampler.sample(450)[1])
     print(sampler.sample(225)[1])
     
+    
+    i = 0
+    num_chunks = 30
+    all_c =  sampler.get_chunk(1, 0)[0]
+    for k in range(num_chunks):
+        chunk = sampler.get_chunk(num_chunks, k)
+        assert chunk[1], f"orignal rs file length ({len(all_c)}) is not divisable by num chunks requested ({num_chunks})"
+        c1 = chunk[0]
+        for j in range(len(c1)):
+            assert all_c[i] == c1[j], f"values differ (original,chunk_ind,ind) @{i}({all_c[i]}),{k},{j}({c1[j]})"
+            i +=1
+
 if __name__ == "__main__":
     test_sample()

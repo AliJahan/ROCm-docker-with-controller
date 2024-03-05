@@ -1,9 +1,11 @@
 import os
+import math
 import pandas as pd
-from sklearn import linear_model
+import matplotlib.pyplot as plt
+from sklearn import linear_model, ensemble, neural_network
 
-from fr_optimizer import Optimize
-
+from .fr_optimizer import Optimize
+from .plot_be_profile import BEPowerProfilePlotter
 class PowerModel:
     def __init__(
             self,
@@ -14,7 +16,9 @@ class PowerModel:
             lc_power_profile_dir_path: str,
             lc_load_pct_trace_file: str,
             be_power_profile_dir_path: str,
+            debug = False
         ):
+        self.debug = debug
         self.lc_qos_msec = lc_qos_msec
         self.lc_qos_metric = lc_qos_metric
         self.num_system_gpus = num_system_gpus
@@ -24,22 +28,26 @@ class PowerModel:
         self.be_power_profile_dir_path = be_power_profile_dir_path
         self.power_profiles = self.load_power_profiles()
         self.lc_load_trace = self.load_and_convert_lc_load_trace()
-        self.power_models = self.create_power_model(plot=True)
+        self.power_models = self.create_power_model()
         # self.lc_trace_powers = self.get_power_ranges_lc_cap()
 
-    def load_lc_power_profile(self):
+    def get_power_models(self):
+        return self.power_models
+    def load_power_profiles(self):
         # Obtain all profiled files (CUMasking + PowerCapping)
         lc_powercap_files = list()
         lc_cu_files = list()
+        be_cu_cap_files = list()
         for (dirpath, _, filenames) in os.walk(self.lc_power_profile_dir_path):
-            # print(f"dirpath: {dirpath} dirname: {dirnames} filenames: {filenames}")
             for _file in filenames:
-                if "cap" in _file: # power cap profile
+                if "lc" in _file and "_cap" in _file: # power cap profile
                     lc_powercap_files.append(f"{dirpath}/{_file}")
-                elif "cus" in _file: # cus profile
+                elif "lc" in _file and "_cus" in _file: # cus profile
                     lc_cu_files.append(f"{dirpath}/{_file}")
+                elif "be" in _file:
+                    be_cu_cap_files.append(f"{dirpath}/{_file}")
                 else:
-                    print(f"[FrequencyRegulator/load_lc_power_profile]: profile file name not supported: {_file}")
+                    print(f"[FrequencyRegulator/load_power_profiles]: profile file name not supported: {_file}")
         # Process PowerCapping profile data
         # sort based on cap value
         lc_powercap_files.sort(
@@ -54,7 +62,8 @@ class PowerModel:
         for file_abs_path in lc_powercap_files:
             file_name = file_abs_path[file_abs_path.rfind('/')+1:]
             cap = int(file_name.split("cap")[1].split("_")[0])
-            print(f"[PowerModel/load_lc_power_profile]: Reading file {file_name}, PowerCap {cap}")
+            if self.debug:
+                print(f"[PowerModel/load_power_profiles]: Reading file {file_name}, PowerCap {cap}")
             all_data = pd.read_csv(file_abs_path)
             all_data = all_data.sort_values('load_pct')
             filtered_by_qos = all_data[all_data[self.lc_qos_metric] <= self.lc_qos_msec]
@@ -75,18 +84,44 @@ class PowerModel:
         for file_abs_path in lc_cu_files:
             file_name = file_abs_path[file_abs_path.rfind('/')+1:]
             cus = int(file_name.split("cus")[1].split("_")[0])
-            print(f"[PowerModel/load_lc_power_profile]: Reading file {file_name}, CUs {cus}")
+            if self.debug:
+                print(f"[PowerModel/load_power_profiles]: Reading file {file_name}, CUs {cus}")
             all_data = pd.read_csv(file_abs_path)
             all_data = all_data.sort_values('load_pct')
             filtered_by_qos = all_data[all_data[self.lc_qos_metric] <= self.lc_qos_msec]
             lc_cu_power_map[cus] = filtered_by_qos
-            
+
+        assert len(be_cu_cap_files) == 1, f"[PowerModel/load_power_profiles]: there are multiple be profiles: {be_cu_cap_files}"
+        
+        be_power_df = None
+        be_cap_cu_power_map = dict()
+        for file_abs_path in be_cu_cap_files:
+            file_name = file_abs_path[file_abs_path.rfind('/')+1:]
+            if self.debug:
+                print(f"[PowerModel/load_be_power_profile]: Reading file {file_name}")
+            all_data = pd.read_csv(file_abs_path)
+            all_data = all_data.sort_values(['cap', 'cu'], ascending=[False, False])
+            # TODO: eyeballing data shows cu=12 is supported by all of cap,cu combinations
+            filtered_idle = all_data[all_data.gpu > 0]
+            filtered_by_cu = filtered_idle[filtered_idle.cu >= 12]
+            filtered_by_gpu_idle_power = filtered_by_cu[filtered_by_cu.cap >= 10] # gpu idle power
+            be_power_df = filtered_by_gpu_idle_power
+            for idx, row in be_power_df.iterrows():
+                if row.cap not in be_cap_cu_power_map:
+                    be_cap_cu_power_map[row.cap] = dict()
+                be_cap_cu_power_map[row.cap][row.cu] = row.gpu_0_avg_pow
+        if self.debug:
+            plotter = BEPowerProfilePlotter(be_power_df, f"{os.path.dirname(os.path.abspath(__file__))}/../data/", "miniMDock")
+            plotter.plot()
         
         return {
-            'cap': lc_cap_power_map, 
-            'cu': lc_cu_power_map
+            'lc': {
+                'cap': lc_cap_power_map, 
+                'cu': lc_cu_power_map
+            },
+            'be': be_power_df
         }
-
+    
     def load_and_convert_lc_load_trace(self):
         """
         Loads LC load trace. Each line of the trace has to be between 1 to 100.
@@ -125,57 +160,132 @@ class PowerModel:
             'server_rps': load_server_rps_data,
             'num_gpus': load_num_gpu_data
         }
-
-    def load_be_power_profile(self):
-        pass
     
-    def load_power_profiles(self):
-        lc_power_profile = self.load_lc_power_profile()
-        be_power_profile = self.load_be_power_profile()
-        return {
-            'be' : be_power_profile,
-            'lc' : lc_power_profile
-        }
-    
-    def create_power_model(self, plot = True, plot_save_path: str = "../data"):
-        if plot:
-            import matplotlib.pyplot as plt
-        # Create power model 
-        power_profile = self.power_profiles
+    def create_lc_power_model(self, power_profile, plot_save_path: str = "./data"):
         power_model = dict()
-        for workload in power_profile:
-            power_model[workload] = dict()
-            if power_profile[workload] is None: # BE is not ready yet
-                continue
-            for model_type in power_profile[workload]: # cu or cap
-                if plot:
+        for model_type in power_profile: # cu or cap
+                if self.debug:
                     plt.cla()
-
-                power_model[workload][model_type] = dict()
-                for type_value in power_profile[workload][model_type]: # num_cus or power_cap value
-                    powers = power_profile[workload][model_type][type_value].gpu_0_avg_pow.values
+                power_model[model_type] = dict()
+                for type_value in power_profile[model_type]: # num_cus or power_cap value
+                    powers = power_profile[model_type][type_value].gpu_0_avg_pow.values
                     powers = powers.reshape(powers.shape[0], 1)
-                    loads_pct = power_profile[workload][model_type][type_value].load_pct.values
-                    loads_pct = loads_pct.reshape(loads_pct.shape[0], 1)
+                    loads_pct = power_profile[model_type][type_value].load_pct.values
+                    loads_pct_extended = loads_pct.reshape(loads_pct.shape[0], 1)
                     regressor = linear_model.LinearRegression()
-                    regressor.fit(loads_pct, powers)
-                    power_model[workload][model_type][type_value] = regressor.predict
-                    if plot:
+                    regressor.fit(loads_pct_extended, powers)
+                    power_model[model_type][type_value] = regressor.predict
+                    if self.debug:
                         # plt.cla()
+                        # coef = "{:.2f}".format(regressor.coef_[0][0])
+                        # intercept = "{:.2f}".format(regressor.intercept_[0])
+                        # info_str = f"qos metric: {self.lc_qos_metric}\nqos threashold:{self.lc_qos_msec} msec\nmax safe load: {max(loads_pct)[0]}\n------\ncoef: {coef}\nintercept: {intercept}"
+                        # plt.text(0,160, info_str)
                         # plt.scatter(loads_pct, powers,  color='black', label="Power Data")
-                        # plt.xlim(min(loads_pct)-10,max(loads_pct)+10)
-                        plt.plot(loads_pct, regressor.predict(loads_pct), linewidth=3, label=f"{model_type}={type_value}")
-                        coef = "{:.2f}".format(regressor.coef_[0][0])
-                        intercept = "{:.2f}".format(regressor.intercept_[0])
-                        label_y_coord = max(regressor.predict(loads_pct))
-                        info_str = f"qos metric: {self.lc_qos_metric}\nqos threashold:{self.lc_qos_msec} msec\nmax safe load: {max(loads_pct)[0]}\n------\ncoef: {coef}\nintercept: {intercept}"
-                        plt.text(0,160, info_str)
+                        plt.plot(loads_pct, regressor.predict(loads_pct_extended), linewidth=3, label=f"{model_type}={type_value}")                        
                         plt.title(f"Power/Load for {model_type} = {type_value}")
                         plt.xlabel("Load (%)")
                         plt.ylim(0,225)
+                        plt.xlim(-5,105)
                         plt.ylabel("Avg. Power (w)")
-                        plt.legend(loc='upper right')
-                        plt.savefig(f"{plot_save_path}/lc_load_vs_{model_type}{type_value}_regression_model.png")
+                        plt.legend(loc='upper right',ncol=4, bbox_to_anchor=(1, 1))
+                        plt.savefig(f"{plot_save_path}/lc_load_vs_{model_type}{type_value}.png", tight_layout=True)
+        return power_model
+    def create_be_power_model(self, power_profile, plot_save_path: str = "./data"):
+        power_model = {
+            'power2cap': dict(),
+            'power2cu': dict()
+        }
+        if self.debug:
+            plt.cla()
+        
+        caps = sorted(list(power_profile.cap.unique()))
+        cus = sorted(list(power_profile.cu.unique()))
+        for cu in cus:
+            filtered_by_cu = power_profile.query(f"cu == {cu}")
+            # filter caps that do not work (the point where the actual power is always less than cap value)
+            filtered_max_power = filtered_by_cu.query(f'cap <= {max(filtered_by_cu.gpu_0_avg_pow.values)}')
+            # filter caps that do not work (the point where the actual power is always greater than cap value)
+            filtered_power = filtered_max_power.query(f'cap > {min(filtered_max_power.gpu_0_avg_pow.values)}')
+            avg_powers = filtered_power.gpu_0_avg_pow.values
+            avg_powers_extended = avg_powers.reshape(avg_powers.shape[0], 1)
+            caps = filtered_power.cap.values
+            caps_extended = caps.reshape(caps.shape[0], 1)
+            regressor = linear_model.LinearRegression()
+            regressor.fit(avg_powers_extended, caps)
+            power_model['power2cap'][cu] = {
+                'reg_model': regressor.predict,
+                'min_supported': min(avg_powers),
+                'max_supported': max(avg_powers)
+            }
+            
+            if self.debug:
+                plt.cla()
+                # coef = "{:.2f}".format(regressor.coef_[0][0])
+                # intercept = "{:.2f}".format(regressor.intercept_[0])
+                # info_str = f"qos metric: {self.lc_qos_metric}\nqos threashold:{self.lc_qos_msec} msec\nmax safe load: {max(loads_pct)[0]}\n------\ncoef: {coef}\nintercept: {intercept}"
+                # plt.text(0,160, info_str)
+                plt.scatter(avg_powers, caps,  color='black', label="Power Data")
+                plt.plot(avg_powers, regressor.predict(caps_extended), linewidth=3, label=f"cu={cu}")                        
+                plt.title(f"Power/Load for cu = {cu}")
+                plt.xlabel("Power")
+                # plt.ylim(0,225)
+                # plt.xlim(-5,105)
+                plt.ylabel("Cap")
+                plt.legend(loc='upper right',ncol=4, bbox_to_anchor=(1, 1))
+                plt.savefig(f"{plot_save_path}/be_power2cap_cu{cu}.png", tight_layout=True)
+        min_power_by_cap = max(power_profile.query(f"cap == {power_profile.cap.min()}").gpu_0_avg_pow.values)
+        # print(min_power_by_cap)
+        # input("?")
+        for cap in caps:
+            filtered_by_cap = power_profile.query(f"cap == {cap}")
+            if cap < min_power_by_cap:
+                # filter cus that do not work (the point where the actual power is always less than cap value)
+                filtered_by_cap = filtered_by_cap.query(f'gpu_0_avg_pow >= {cap}')
+                filtered_by_cap = filtered_by_cap.query(f'cap <= {min_power_by_cap}')
+
+            # filter caps that do not work (the point where the actual power is always greater than cap value)
+            # filtered_cu = filtered_max_cu.query(f'cap > {min(filtered_max_cu.gpu_0_avg_pow.values)}')
+            avg_powers = filtered_by_cap.gpu_0_avg_pow.values
+            avg_powers_extended = avg_powers.reshape(avg_powers.shape[0], 1)
+            cus = filtered_by_cap.cu.values
+            cus_extended = cus.reshape(cus.shape[0], 1)
+
+            regressor = neural_network.MLPRegressor(hidden_layer_sizes=(100,100))
+            # regressor = linear_model.LinearRegression()
+            regressor.fit(avg_powers_extended, cus)
+            power_model['power2cu'][cap] = {
+                'reg_model': regressor.predict,
+                'min_supported': min(avg_powers),
+                'max_supported': max(avg_powers)
+            }
+
+            if self.debug:
+                plt.cla()
+                # coef = "{:.2f}".format(regressor.coef_[0][0])
+                # intercept = "{:.2f}".format(regressor.intercept_[0])
+                # info_str = f"qos metric: {self.lc_qos_metric}\nqos threashold:{self.lc_qos_msec} msec\nmax safe load: {max(loads_pct)[0]}\n------\ncoef: {coef}\nintercept: {intercept}"
+                # plt.text(0,160, info_str)
+                # plt.scatter(cus, avg_powers, color='black', label="Power Data")
+                plt.scatter(avg_powers, cus, color='black', label="Power Data")
+                plt.plot(avg_powers, regressor.predict(cus_extended), linewidth=3, label=f"cap={cap}")                        
+                plt.title(f"Power/Load for cap = {cap}")
+                plt.xlabel("Power")
+                # plt.ylim(0,225)
+                # plt.x               
+                plt.ylabel("CU")
+                plt.legend(loc='upper right',ncol=4, bbox_to_anchor=(1, 1))
+                plt.savefig(f"{plot_save_path}/be_power2cu_cap{cap}.png", tight_layout=True)
+            # input("?")
+        return power_model
+    
+    def create_power_model(self, plot_save_path: str = f"{os.path.dirname(os.path.abspath(__file__))}/../data"):
+        
+        power_model = {
+            'lc': self.create_lc_power_model(self.power_profiles['lc']),
+            'be': self.create_be_power_model(self.power_profiles['be'])
+        }
+                
         return power_model
 
     def get_power_ranges_lc_cap(self, avg_load_pct):
@@ -210,7 +320,7 @@ class PowerModel:
         # print(load_trace_powers.describe())
         return load_trace_powers
 
-    def optimized_for_fr(self, elec_cost: int, reg_up: int, reg_down: int, symmetric_provision_range=False, preformance_score_pct=85):
+    def optimized_for_fr(self, elec_cost: int, reg_up: int, reg_down: int, symmetric_provision_range=False, preformance_score_pct=100):
         avg_load = sum(self.lc_load_trace['raw_percent'])/len(self.lc_load_trace['raw_percent'])
         power_ranges = self.get_power_ranges_lc_cap(avg_load)
         # print(power_ranges.describe())
@@ -222,10 +332,10 @@ class PowerModel:
             avg_power=avg_power,
             min_acceptable_power=min_acceptable_power,
             increase_price=reg_down,
-            max_power=self.num_system_gpus*220,
+            max_power=self.num_system_gpus*self.power_models['be']['power2cap'][60]['max_supported'],
             reduce_price=reg_up,
             power_price=elec_cost,
-            saving_threashold_pct=20,
+            saving_threashold_pct=10,
             symmetric_provision_range=symmetric_provision_range,
             predicted_perf_score_pct=preformance_score_pct
         )
@@ -258,11 +368,12 @@ def test_power_model():
     pm = PowerModel(
         num_system_gpus=8,
         lc_qos_msec=40,
-        lc_qos_metric="p99th",
+        lc_qos_metric="p95th",
         lc_max_rps_per_gpu=98,
-        lc_load_pct_trace_file="/home/ajaha004/repos/ROCm-docker-with-controller/scripts/frequency_regulator_power_cap/data/example_lc_trace.txt",
+        lc_load_pct_trace_file="/home/ajaha004/repos/ROCm-docker-with-controller/scripts/frequency_regulator_power_cap/data/trace_step5_max60.txt",
         be_power_profile_dir_path="/home/ajaha004/repos/ROCm-docker-with-controller/results",
-        lc_power_profile_dir_path="/home/ajaha004/repos/ROCm-docker-with-controller/results"
+        lc_power_profile_dir_path="/home/ajaha004/repos/ROCm-docker-with-controller/results",
+        debug=True
     )
     return
     lmps_file = '/home/ajaha004/repos/ROCm-docker-with-controller/scripts/frequency_regulator_power_cap/data/lmpE.npy'

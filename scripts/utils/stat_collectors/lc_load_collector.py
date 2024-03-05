@@ -74,8 +74,9 @@ class LCLoadCollector(threading.Thread):
                     continue
                 # Record current load(rps) data
                 rcvd_power_data = json.loads(msg)
-                if self.queue.empty() is False:
-                    self.queue.get()
+                with self.lock:
+                    if self.queue.empty() is False:
+                        self.queue.get()
                 self.queue.put(int(rcvd_power_data['requests']))
             with self.lock:
                 if self.runnig == False:

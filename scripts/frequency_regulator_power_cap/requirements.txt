@@ -1,4 +1,6 @@
 z3-solver
 pandas
-sklearn
+scikit-learn
 numpy
+zmq
+matplotlib

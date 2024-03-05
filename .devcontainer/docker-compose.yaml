@@ -1,6 +1,20 @@
 version: "3.8"
 
 services:
+  freq-reg:
+    image: freq-reg:latest
+    build:
+      context: ..
+      dockerfile: ./.devcontainer/Dockerfile.frequency-regulator-centos7
+    stdin_open: true
+    tty: true
+    volumes:
+      - "/etc/timezone:/etc/timezone:ro"
+      - "/etc/localtime:/etc/localtime:ro"
+      - ../:/workspace
+    working_dir: /workspace
+    command: /bin/bash
+    network_mode: "host"
   experiment-runner:
     image: experiment-runner:latest
     build:

@@ -58,12 +58,13 @@ class LCClientRunner:
         print(f"\t- [Client runner] checking if client process is done ... ", flush=True, end="")
         if p.poll() is None:
             print(f"No (retrying in 60 sec) ... ", flush=True, end="")
-            time.sleep(60)
+            time.sleep(self.trace_unit_sec)
         print(f"Done!", flush=True)
         
         # check for client
         if p.poll() is None:
             print(f"\t- [Client runner] ERROR client process not responsding!", flush=True)
+            p.kill()
             return None
         
         p.wait()
@@ -125,7 +126,7 @@ class LCClientRunner:
 class LCClientRunnerWarpper:
     client = None
     warmup_loads_trace = "/tmp/warmup_client_trace"
-    max_warmup_load_pct = 90
+    max_warmup_load_pct = 20
     def __init__(
             self, 
             num_warmpup_load_steps: int, 
@@ -153,8 +154,11 @@ class LCClientRunnerWarpper:
         step = math.ceil(self.max_warmup_load_pct/self.num_warmpup_load_steps)
         
         loads = list()
+        print("\t- [Client runner] warmup trace pct:", end="", flush=True)
         for i in range(self.max_warmup_load_pct, 1, -step):
             loads.append(i)
+            print(f"{i},", end="", flush=True)
+        print("", flush=True)
         loads.reverse()
         f = open(self.warmup_loads_trace, 'w')
         for i in loads:

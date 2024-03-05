@@ -18,8 +18,12 @@ class GPUResourceManagerDistributed:
     def __init__(
             self,
             remote_control_ip: str = "172.20.0.6",
-            remote_control_port: str = "5000"
+            remote_control_port: str = "5000",
+            wait_after_send = True,
+            debug = False
         ):
+        self.debug = debug
+        self.wait_after_send = wait_after_send
         self.remote_control_ip = remote_control_ip
         self.remote_control_port = remote_control_port
         self.resrouce_controller_socket = self.setup_socket()
@@ -50,6 +54,9 @@ class GPUResourceManagerDistributed:
     def add_cu(self, app_name: str, gpu: int, cus: int, is_be = False):
         if cus < 0:
             return False
+        
+        if cus == 0:
+            return True
         
         if gpu not in self.gpus_masks:
             print(f"\t- [GPUResourceManager]: ERROR requested gpu ({gpu}) is not available!")
@@ -126,10 +133,13 @@ class GPUResourceManagerDistributed:
         )
     
     def setup_socket(self):
+        if self.debug:
+            return None
+
         self.ctx = zmq.Context.instance()
         publisher = None
         # poller = None
-        print(f"Binding to {self.remote_control_ip}:{self.remote_control_port}... ", end="")
+        print(f"\t- [GPUResourceManager]: Binding to {self.remote_control_ip}:{self.remote_control_port}... ", end="")
         try:
             publisher = self.ctx.socket(zmq.PUB)
             publisher.bind(f"tcp://*:{self.remote_control_port}")
@@ -140,7 +150,9 @@ class GPUResourceManagerDistributed:
         return None
 
     def send_msg(self, channel, msg):
-        print(f"\t- Sending message: ({channel}) {msg} ... ", end="", flush=True)
+        print(f"\t- [GPUResourceManager]: sending message: ({channel}) {msg} ... ", end="", flush=True)
+        if self.debug:
+            return True
         rep = True
         try:
             self.resrouce_controller_socket.send_string(f"{channel}", flags=zmq.SNDMORE)
@@ -151,26 +163,42 @@ class GPUResourceManagerDistributed:
             else:
                 print(f"FAILED! error: ZMQ socket error: {e}", flush=True)
             rep = False
-        if rep == True:
+        if rep == True and self.wait_after_send:
             time.sleep(self.SLEEP_AFTER_SEND_MSG_SEC)
             print(f"Done!") 
         return rep
     
     def set_mask(self, app_name, gpu, cumask_full_hex0, cumask_full_hex1):
+        has_one = False
+        for i in range(len(cumask_full_hex0)):
+            if cumask_full_hex0[i] != '0':
+                has_one = True
+                break
+        for i in range(len(cumask_full_hex1)):
+            if has_one is False and cumask_full_hex1[i] != '0':
+                has_one = True
+                break
+        if has_one is False: # Both masks are 0
+            return True
+        
         return self.send_msg(app_name, f"SET_CUMASK:{gpu}:{cumask_full_hex0}:{cumask_full_hex1}")
     
     def set_freq(self, app_name: str, gpu: int, freq: int):
         if gpu not in self.gpus_masks:
-            print(f"Gpu ({gpu}) does not exists", flush=True)
+            print(f"\t- [GPUResourceManager]: ERROR: Gpu ({gpu}) does not exists", flush=True)
             return False
 
-        if freq < 5 or freq > 225:
-            print(f"Freq provided ({freq}) is not withing range (5,225)", flush=True)
-            return False
+        if freq < 5:
+            print(f"\t- [GPUResourceManager]: Warning: Freq provided ({freq}) is not withing range (5,225), setting to 5", flush=True)
+            freq = 5
+        
+        if freq > 225:
+            print(f"\t- [GPUResourceManager]: Warning: Freq provided ({freq}) is not withing range (5,225), setting to 225", flush=True)
+            freq = 225
 
         # Warning check:
         if len(self.gpus_masks[gpu][GPUWorkloadType.BE]) > 0 and len(self.gpus_masks[gpu][GPUWorkloadType.LC]) > 0:
-            print(f"WARNNING: Both BE and LC apps are located in this GPU, setting gpu {gpu} freq to {freq} may impact both apps performance", flush=True)
+            print(f"\t- [GPUResourceManager]: WARNNING: Both BE and LC apps are located in this GPU, setting gpu {gpu} freq to {freq} may impact both apps performance", flush=True)
         # for cleanup
         if app_name not in self.apps_freq_changed:
             self.apps_freq_changed[app_name] = list()
@@ -184,7 +212,7 @@ class GPUResourceManagerDistributed:
                 self.set_freq(app_name=app_name, gpu=gpu, freq=225)
 
 def test_resrouce_manager():
-    mgr = GPUResourceManager()
+    mgr = GPUResourceManagerDistributed()
     print("Adding BE")
     # time.sleep(10)
     for i in range(6):

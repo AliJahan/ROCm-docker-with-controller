@@ -1,6 +1,7 @@
 import zmq
 import copy
 import json
+import time
 import threading
 import multiprocessing
 
@@ -13,8 +14,10 @@ class PowerCollector(threading.Thread):
             self,
             power_broadcaster_ip: str,
             power_broadcaster_port: str = "6000",
-            collection_interval_sec: int = 1
+            collection_interval_sec: int = 1,
+            debug = False
         ):
+        self.debug = debug
         self.collection_interval_sec = collection_interval_sec
         self.power_broadcaster_port = power_broadcaster_port
         self.power_broadcaster_ip = power_broadcaster_ip
@@ -31,14 +34,20 @@ class PowerCollector(threading.Thread):
         if  self.power_socket is None:
             return False
     def deinit(self):
+        if self.debug:
+            return
         if self.power_socket is not None:
             self.power_socket.close()
             del self.power_socket
-        self.ctx.term()
+        del self.ctx
+        self.ctx = None
+        print("\t- [PowerCollector]: sockets closed", flush=True)
         
 
     def setup_socket(self):
-        print(f"Connecting to power broadcaster {self.power_broadcaster_ip}:{self.power_broadcaster_port} ... ", end="")
+        if self.debug:
+            return True
+        print(f"\t- [PowerCollector]: Connecting to power broadcaster {self.power_broadcaster_ip}:{self.power_broadcaster_port} ... ", end="")
         self.ctx = zmq.Context.instance()
         publisher = self.ctx.socket(zmq.SUB)
         poller = None
@@ -55,12 +64,17 @@ class PowerCollector(threading.Thread):
         return None, None
 
     def run(self):
+        if self.debug:
+            return
         with self.lock:
             self.runnig = True
-        print("PowerCollector is running...")
+        print("\t- [PowerCollector]: PowerCollector is running...")
         while True:
+            # time.sleep(0.001)
+            with self.lock:
+                if self.runnig == False:
+                    break
             socks = dict(self.poller.poll(5))
-
             if self.power_socket in socks and socks[self.power_socket] == zmq.POLLIN:
                 msg = None
                 try:
@@ -79,12 +93,10 @@ class PowerCollector(threading.Thread):
                 with self.lock:
                     self.powers_list.append(rcvd_power_data)
                     self.num_samples += 1
-                if self.queue.empty() == False:
-                    self.queue.get()
-                self.queue.put(rcvd_power_data)
-            with self.lock:
-                if self.runnig == False:
-                    break
+                    if self.queue.empty() == False:
+                        self.queue.get()
+                    self.queue.put(rcvd_power_data)
+        print("\t- [PowerCollector]: PowerCollector thread is stopped")
             # time.sleep(self.collection_interval_sec)
 
     def get_cur_power(self): # gets the last power published
@@ -98,13 +110,9 @@ class PowerCollector(threading.Thread):
             num_samples = copy.deepcopy(self.num_samples)
         return {"powers": powers, "num_samples": num_samples, "sample_interval": self.collection_interval_sec}
     def stop(self):
-        running = False
         with self.lock:
-            running = self.runnig
-        if running:
-            with self.lock:
-                self.runnig = False
-            self.join()
+            self.runnig = False
+        self.join()
         self.deinit()
 
     def __del__(self):

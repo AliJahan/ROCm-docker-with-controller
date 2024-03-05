@@ -23,7 +23,7 @@ class RemoteExperimentRunner:
             remote_workload_ctl_port: str = "3000",
             target_docker_ctrl_port: str = "4000",
             target_power_broadcaster_port: str = "6000",
-            cu_masking_policy: str = "packed"
+            cu_masking_policy: str = "distribured"
         ):
         self.RESULTS_DIR = "/workspace/results"
         self.LOGS_DIR = "/workspace/experiment_logs"
@@ -84,6 +84,7 @@ class RemoteExperimentRunner:
     def stop_power_collection(self):
         assert self.power_collector is not None, "power collector is not running"
         power = self.power_collector.get_all_powers()
+        self.power_collector.stop()
         del self.power_collector
         self.power_collector = None
         return power
@@ -468,10 +469,10 @@ class RemoteExperimentRunner:
         args = dict()
         args['model'] = model
         args['batch_size'] = "1"
-        expr_num_warmpup_load_steps=4
-        expr_warmup_step_duration_sec=60
-        expr_max_rps_per_gpu=100
-        expr_trace_unit_sec=60
+        expr_num_warmpup_load_steps=2
+        expr_warmup_step_duration_sec=10
+        expr_max_rps_per_gpu=75
+        expr_trace_unit_sec=30
         def read_performed_expers(file_name, round):
             data = list()
             if os.path.isfile(file_name) == False:
@@ -617,7 +618,8 @@ class RemoteExperimentRunner:
                     gpus=gpu,
                     max_rps_per_gpu=expr_max_rps_per_gpu,
                     trace_file=warmup_trace,
-                    trace_unit_sec=expr_trace_unit_sec
+                    trace_unit_sec=expr_trace_unit_sec,
+                    no_run=True
                 )
                 for g in range(0, gpu):
                     current_cus = self.resource_controller.get_current_cus(gpu=g, is_be=False)
@@ -657,7 +659,7 @@ class RemoteExperimentRunner:
                     print(f"4-Stopping power-broadcaster for {load_pct}%" , flush=True)
                     assert self.docker_runner.stop_docker("power-broadcaster") == True, "Failed! stopping experiments!"
                     
-                    if qos_data['mean'] > 10000:
+                    if qos_data['mean'] > 500:
                         print(f"Ignoring the rest of experiments. curr load {load_pct} mean latency is {qos_data['mean']}" , flush=True)
                         break
                     print(f"---------------------------------------" , flush=True)
@@ -669,6 +671,170 @@ class RemoteExperimentRunner:
                 assert self.docker_runner.stop_docker("Inference-Server")== True, "Could not stop Inference-Servre service"
                 self.cleanup()
                 print("Experiment end-------------------------------" , flush=True)
+    def run_sweep_be_cap_and_cu_mask(self, cap_step: int, cumask_step: int, workload_name: str):
+        results_file = self.RESULTS_DIR+f"/be_{workload_name}_capstep{cap_step}_custep{cumask_step}"
+        gpu = 1
+        def read_performed_expers(file_name):
+            data = list()
+            if os.path.isfile(file_name) == False:
+                return data
+            
+            # round = str(file_name.split("round")[-1])
+            f = open(file_name, 'r')
+            lines = f.readlines()
+            f.close()
+            
+            for line in lines[1:]:
+                line_d = line.split(",")
+                # (round, gpu, mask, load)
+                data.append((int(line_d[0]), int(line_d[1]), int(line_d[2])))
+            print(f"Found {len(data)} experiments from previous run to skip!", flush=True)
+            return data
+        def save_results(gpu, cap, cus, powers, create = False):
+            if os.path.isfile(results_file) and create:
+                create = False
+            if int(powers['num_samples']) == 0:
+                return False
+            fd = open(results_file, 'w' if create else 'a')
+            # 'num_samples': 480, 'sample_interval': 1
+            cpu_avg = 0.0
+            gpu_avg = dict()
+            for power in powers['powers']:
+                cpu_pow = power['cpu']
+                gpus_pow = power['gpu']
+                cpu_avg += float(cpu_pow)
+                for g in gpus_pow:
+                    if g not in gpu_avg:
+                        gpu_avg[g] = 0
+                    gpu_avg[g] += float(gpus_pow[g])
+            cpu_avg /= float(powers['num_samples'])
+            for g in gpu_avg:
+                gpu_avg[g] /= float(powers['num_samples'])
+            
+            line = ""
+            # header
+            if create:
+                line = "gpu,cap,cu,cpu_avg_pow,"
+                for g in gpu_avg:
+                    line += f"gpu_{g}_avg_pow,"
+                # 'min': 15.0, 'max': 335.0, 'mean': 50.0, 'p25th': 37.0, 'p50th': 54.0, 'p75th': 57.0, 'p90th': 67.0, 'p95th': 78.0, 'p99th': 103.0
+                line += "cpu_gpu_pow_avg\n"
+            # values
+            # 1- gpus
+            # 2- cap
+            # 3- cus
+            # 4- powers
+                
+            # 1,2,3,4(cpu power)
+            line += f"{gpu},{cap},{cus},{int(cpu_avg)},"
+            # 4 (gpus power)
+            for g in gpu_avg:
+                avg = int(gpu_avg[g])
+                line += f"{avg},"
+            # 4 (server power)
+            cpu_gpu = int(cpu_avg) + int(gpu_avg['total'])
+            line += f'{cpu_gpu}\n'
+            # save into file
+            fd.write(line)
+            fd.close()
+            return True
+
+        prev_expr = read_performed_expers(results_file)
+        # self.setup_server()
+        if (0, 225, 60) not in prev_expr:
+            print("Setting up power-broadvaster on target server" , flush=True)
+            assert self.docker_runner.start_docker("power-broadcaster") == True, "Failed! stopping experiments!"
+            print("Collecting idle powers for 30 sec ... ", end="", flush=True)
+            self.start_power_collection()
+            time.sleep(30)
+            idle_powers = self.stop_power_collection()
+            save_results(
+                gpu=0,
+                cap=225,
+                cus=60,
+                powers=idle_powers,
+                create=True
+            )
+            assert self.docker_runner.stop_docker("power-broadcaster"), "Failed! stopping experiments!"
+            print("Done!", flush=True)
+        print("Setting up target server ... ")
+        for cap in range(225, 0, -cap_step): 
+            for n_cus in range(60//cumask_step):
+                args = dict()
+                total_cus = 60 - (n_cus)*cumask_step
+                if (gpu, cap, total_cus) in prev_expr:
+                    print(f"Skipping expr with gpu:{gpu} cap:{cap} cus{total_cus} since its been done before", flush=True)
+                    continue
+                # there is at list one experiment for this power_cap
+                print(f"Experiment begin(for cap: {cap} cus:{total_cus})-----------------" , flush=True)
+                print("-------------" , flush=True)
+                print(f"Profiling power and Power of {workload_name} with gpus:{gpu}" , flush=True)
+                
+                print(f"1-Starting {workload_name} service ... " , flush=True)
+                assert self.docker_runner.start_docker(workload_name), f"Could not start {workload_name} service for gpu: {gpu}"
+                print(f"2-Starting {workload_name}... " , flush=True)
+                assert self.workload_runner.start(is_be_wl=True), f"Could not start {workload_name} for gpu: {gpu}"
+                # reset
+                for g in range(0, gpu):
+                    args['gpu'] = str(g)
+                    print(f"\t2.1- Adding gpu {g}..." , flush=True)
+                    assert self.workload_runner.add_gpu(is_be_wl=True, args=args), f"Could not add gpu {g} to {workload_name}"
+                    assert self.workload_runner.pause_gpu(is_be_wl=True, args=args), f"Could not pause gpu {g} to {workload_name}"
+                    print(f"\t2.2- Setting num cus for gpu {g} to 60 (reset)..." , flush=True)
+                    current_cus = self.resource_controller.get_current_cus(gpu=g, is_be=True)                    
+                    assert self.resource_controller.add_cu(app_name=workload_name, gpu=g, cus=(60-current_cus), is_be=True), f"Could not set cu mask to 60 for gpu {g}"
+                    print(f"\t2.2- Setting cap for gpu {g} to 225 (reset)..." , flush=True)
+                    assert self.resource_controller.set_freq(app_name=workload_name, freq=225, gpu=g), f"Could not cap to 225 for gpu {g}"
+                # set
+                for g in range(0, gpu):
+                    current_cus = self.resource_controller.get_current_cus(gpu=g, is_be=True)
+                    print(f"\t2.4- Setting num cus for gpu {g} to from {current_cus} cus, removing {(n_cus)*cumask_step} (reset)..." , flush=True)
+                    assert self.resource_controller.remove_cu(app_name=workload_name, gpu=g, cus=(current_cus), is_be=True), f"Could not remove {current_cus} cus for gpu {g}"
+                    assert self.resource_controller.add_cu(app_name=workload_name, gpu=g, cus=(total_cus), is_be=True), f"Could not add {total_cus} cus for gpu {g}"
+                    assert self.resource_controller.set_freq(app_name=workload_name, freq=cap, gpu=g), f"Could not cap to {cap} for gpu {g}"
+                assert self.docker_runner.start_docker("power-broadcaster") == True, "Failed! stopping experiments!"
+                
+                print(f"3-Running {workload_name} with cap:{cap} cus:{total_cus}" , flush=True)
+                for g in range(0, gpu):
+                    args['gpu'] = str(g)
+                    assert self.workload_runner.resume_gpu(is_be_wl=True, args=args), f"Could not resume gpu {g} to {workload_name}"
+                self.start_power_collection()
+                print(f"4-Sleeping for 60 sec to collect power ... ", end="", flush=True)
+                time.sleep(60)
+                print(f"Done!", flush=True)
+                lc_powers = self.stop_power_collection()
+                save_res = save_results(
+                    gpu=gpu,
+                    cap=cap,
+                    cus=total_cus,
+                    powers=lc_powers,
+                    create=False
+                )
+                if save_res:
+                    be_throughput_stat_file = f"/workspace/be_throughputs/{workload_name}_capstep{cap_step}_custep{cumask_step}"
+                    be_args = dict()
+                    be_args['stat_file'] = be_throughput_stat_file
+                    be_args['cap'] = str(cap)
+                    be_args['cus'] = str(total_cus)
+                    
+                    print(f"4.1-saving stats into {be_throughput_stat_file} for gpu:{g} ... " , flush=True)
+                    assert self.workload_runner.finsh_wl(args=be_args, is_be_wl=True), f"Could not save throughput stats for gpu:{g}"                
+                    print(f"5-Saving power for cap:{cap} cus:{total_cus}" , flush=True)
+                
+                print(f"6-Stopping power-broadcaster for cap:{cap} cus:{total_cus}" , flush=True)
+                assert self.docker_runner.stop_docker("power-broadcaster") == True, "Failed! stopping experiments!"
+                print(f"7-Reseting resoures for cap:{cap} cus:{total_cus}")
+                for g in range(0, gpu):
+                    current_cus = self.resource_controller.get_current_cus(gpu=gpu, is_be=True)
+                    print(f"7.1-Removing {current_cus} cus from gpu {g} ... " , flush=True)
+                    assert self.resource_controller.remove_cu(app_name=workload_name, gpu=g, cus=current_cus, is_be=True), f"Could not remove {current_cus} cus for gpu {g}"
+                    print(f"7.2-Restting cap to 225 for gpu {g} ... " , flush=True)
+                    assert self.resource_controller.set_freq(app_name=workload_name, gpu=g, freq=225), f"Could not set cap to 225 for gpu {g}"
+                print(f"8-Stopping {workload_name} service ... " , flush=True)
+                assert self.docker_runner.stop_docker(workload=workload_name), f"Could not stop {workload_name} service"
+                print(f"---------------------------------------" , flush=True)
+                self.cleanup()
+        print("Experiment end-------------------------------" , flush=True)
     def __del__(self):
         self.cleanup()
 
@@ -679,9 +845,10 @@ if __name__ == "__main__":
     #     remote_runner.run_lc_sweep_gpu_experiment(lc_load_steps=2, rounds=2, num_gpus=gpu)
     # for gpu in [1]: # power cap vs qos
     #     remote_runner.run_sweep_lc_load_vs_power_cap(lc_load_steps=2, power_cap_step=5, rounds=1, num_gpus=gpu)
+    # for gpu in [1]: # cu vs qos
+    #     remote_runner.run_sweep_lc_load_vs_cu_mask(lc_load_steps=2, cumask_step=2, rounds=1, num_gpus=gpu)
     for gpu in [1]: # cu vs qos
-        remote_runner.run_sweep_lc_load_vs_cu_mask(lc_load_steps=2, cumask_step=2, rounds=1, num_gpus=gpu)
-    
+        remote_runner.run_sweep_be_cap_and_cu_mask(cap_step=5, cumask_step=2, workload_name="miniMDock")
     print("Done with experiment waiting 10 sec")
     # time.sleep(10000)
 
