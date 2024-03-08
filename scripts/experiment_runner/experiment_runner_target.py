@@ -2,6 +2,8 @@ import zmq
 import subprocess
 import os
 import sys
+import datetime
+
 sys.path.insert(1, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))) # for utils TODO: make it a wheel 
 
 class TargetExperimentRunner:
@@ -88,7 +90,10 @@ class TargetExperimentRunner:
         )
         p.wait()
         return True
-    
+
+    def time_str(self):
+        return datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+
     def start(self):
         if self.subscriber_socket is None:
             return
@@ -99,7 +104,7 @@ class TargetExperimentRunner:
             try:
                 sender = self.subscriber_socket.recv()
                 msg = self.subscriber_socket.recv_string()
-                print(f"rcved from ({sender}): {msg}", flush=True)
+                print(f"@{self.time_str()} rcved from ({sender}): {msg}", flush=True)
             except zmq.ZMQError as e:
                 if e.errno == zmq.ETERM:
                     print("ZMQ socket interrupted/terminated, Quitting...", flush=True)
@@ -125,6 +130,7 @@ class TargetExperimentRunner:
                 self.reply_res(sender, res)
             elif cmd == "stop":
                 image_name = args[0]
+                res = True
                 if image_name in self.running_dockers:
                     res = self.stop_docker(image_name=image_name)
                     self.running_dockers.remove(image_name)

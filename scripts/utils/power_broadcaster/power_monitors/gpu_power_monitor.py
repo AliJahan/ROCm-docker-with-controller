@@ -98,8 +98,11 @@ class GPUPowerMonitor(threading.Thread):
             error_reading = 0
             for i in range(self.num_gpus):
                 gpu_pow = int(self.get_cur_power(i))
+                # if read_total % self.sampling_interval == 0:
+                print(f"r{i}",end="|",flush=True)
                 if gpu_pow == -1: # just in case rocm-smi give error
                     error_reading = True
+                    print(f"br{i}",end="|",flush=True)
                     break
                 power[str(i)] = gpu_pow
             # reading error checking
@@ -117,17 +120,22 @@ class GPUPowerMonitor(threading.Thread):
             # calc. avg. and update
             prev_powers = None
             
+            print(f"ce",end="|",flush=True)
             if self.queue.empty(): # no avg for the first sample
+                print(f"e",flush=True)
                 nb_samples = 1
                 self.queue.put((1, power))
             else:
                 assert self.queue.qsize() == 1, f"power queue size {self.queue.qsize()}, has to be 1"
+                print(f"ba",end="|",flush=True)
                 prev_powers = self.queue.get()
+                print(f"aa",end="|",flush=True)
                 log += str(prev_powers) + "\n"
                 for i in range(self.num_gpus):
                     power[str(i)] = int(float(prev_powers[1][str(i)] * prev_powers[0] + power[str(i)]) / float(prev_powers[0] +1))
                     # prev_powers = self.queue.get()          
                 self.queue.put((nb_samples+1, power))
+                print(f"ap",flush=True)
                 nb_samples += 1
             time.sleep(self.sampling_interval / 1000.0)
 

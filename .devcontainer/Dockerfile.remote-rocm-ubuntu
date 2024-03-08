@@ -37,4 +37,4 @@ RUN cd /tmp/controller \
   && bash setup_service.sh; 
 
 # Start controller service () then keep container running for debug porposes
-ENTRYPOINT /usr/local/bin/controller > "/workspace/logs/$(date -Iminutes)_controller.log" & /tmp/controller/scripts/debug_wait.sh
+ENTRYPOINT /usr/local/bin/controller > "/workspace/logs/$(date -Iminutes)_controller.log" &
