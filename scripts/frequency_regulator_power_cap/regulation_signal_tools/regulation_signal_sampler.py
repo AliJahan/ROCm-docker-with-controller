@@ -1,13 +1,15 @@
-
-
 class RSSampler: # Regulation Signal Sampler
     rs_file_data = list()
     def __init__(
         self,
-        rs_file_path: str
+        rs_file_path: str,
+        keep_symmetric,
+        print_debug_info = True
     ):
+        self.print_debug_info = print_debug_info
         self.rs_file_path = rs_file_path
         self.rs_len = 0
+        self.keep_symmetric = keep_symmetric
         self.read_rs_file_data()
     def read_rs_file_data(self):
         f = open(self.rs_file_path, 'r')
@@ -15,8 +17,14 @@ class RSSampler: # Regulation Signal Sampler
         f.close()
         for line in lines:
             self.rs_len += 1
-            self.rs_file_data.append(float(line))
-        print(f"[RSSampler]: read regulation signal file ({self.rs_file_path}) len({self.rs_len})")
+            if self.keep_symmetric:
+                self.rs_file_data.append(float(line))
+            else:
+                self.rs_file_data.append((float(line)+1)/2.0)
+
+        file_name = self.rs_file_path[self.rs_file_path.rfind("/")+1:]
+        if self.print_debug_info:
+            print(f"\t-[RSSampler/read_rs_file_data]: read regulation signal file ({file_name}) len({self.rs_len}) symmetric({self.keep_symmetric})")
 
     def sample(self, new_len: int = 450, diff: float = 0.5): 
         """
@@ -36,8 +44,9 @@ class RSSampler: # Regulation Signal Sampler
             return [None, False]
         
         last_ind = int(new_len*ratio)
-        print(f"[RSSampler]: Truncating {self.rs_len-last_ind} samples from original rs file", flush=True)
-        print(f"[RSSampler]: sampling ratio: {ratio}", flush=True)
+        if self.print_debug_info:
+            print(f"\t-[RSSampler/sample]: truncating {self.rs_len-last_ind} samples from original rs file", flush=True)
+            print(f"\t-[RSSampler/sample]: sampling ratio: {ratio}", flush=True)
         truncated = self.rs_file_data[:last_ind] if last_ind > 0 else self.rs_file_data
         sampled = list()
         for start in range(new_len):
@@ -51,14 +60,18 @@ class RSSampler: # Regulation Signal Sampler
                 return [sampled, False]
         
         return [sampled, True]
-    def get_chunk(self, num_chunks: int, chunk_ind: int):
+    def get_chunk(self, num_chunks: int, chunk_ind: int):        
         if chunk_ind >= num_chunks:
-            print(f"[RSSampler/chunker]: chunk index {chunk_ind} has to be in range [0,{num_chunks})", flush=True)
+            print(f"\t-[RSSampler/get_chunk]: chunk index {chunk_ind} has to be in range [0,{num_chunks})", flush=True)
             return [None, False]
+
         if self.rs_len % num_chunks is not 0:
-            print(f"[RSSampler/chunker]: RS signal length ({self.rs_len}) not divisible number of requested chunks ({chunk_ind})", flush=True)
+            print(f"\t-[RSSampler/get_chunk]: RS signal length ({self.rs_len}) not divisible number of requested chunks ({chunk_ind})", flush=True)
             return [None, False]
-        
+
+        if self.print_debug_info:
+            print(f"\t-[RSSampler/get_chunk]: chunked rs data (original len:{self.rs_len} chunk_len:{self.rs_len//num_chunks} num chunks:{num_chunks} chunk_ind:{chunk_ind})", flush=True)
+
         chunk = self.rs_file_data[chunk_ind*(self.rs_len//num_chunks):(chunk_ind+1)*(self.rs_len//num_chunks)]
         return [chunk, True]
 

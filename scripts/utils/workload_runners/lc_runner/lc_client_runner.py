@@ -8,6 +8,7 @@ CLIENT_CMD = f"/workloads/Inference-server/build/bin/client -m {MODEL_NAME} -c 1
 class LCClientRunner:
     running = False
     trace_file = ""
+    process = None
     MODEL_NAME = "resnet152"
     CLIENT_CMD = f"/workloads/Inference-server/build/bin/client -m {MODEL_NAME} -c 1 -e trace -f "
     def __init__(self, trace_file: str, gpus: int, max_rps_per_gpu : int, trace_unit_sec: int = 60, debug: bool = False) -> None:
@@ -15,7 +16,7 @@ class LCClientRunner:
         self.debug = debug
         self.max_rps_per_gpu = max_rps_per_gpu
         if trace_unit_sec < 0 or trace_unit_sec > 60:
-            print(f"\t- [Client runner] Got {trace_unit_sec} as trace time unit. Using default (=60 sec)")
+            print(f"\t-[Client runner] Got {trace_unit_sec} as trace time unit. Using default (=60 sec)")
             trace_unit_sec = 60
         self.trace_unit_sec = trace_unit_sec
         self.wait_for_client_sec = max(5, int(0.1*self.trace_unit_sec)) # 10% more sleep time for client
@@ -25,7 +26,7 @@ class LCClientRunner:
         f = open(workload_trace, 'r')
         data = f.readlines()
         load_lst = "duration,rps\n"
-        print(f"\t- [Client runner] Converting {workload_trace} trace data (load percent) to the inference server load (rps)")
+        print(f"\t-[Client runner] Converting {workload_trace} trace data (load percent) to the inference server load (rps)")
         
         for line in data:
             load_lst += f"{trace_unit},{int((float(line) / 100.0) * num_gpus * per_gpu_max_rps)}\n"
@@ -37,43 +38,67 @@ class LCClientRunner:
         f.close()
         return tmp_trace_name
     
-    def run_client(self, server_ip: str = "localhost", cmd: str = ""): # runs client
+    def run_client(self, server_ip: str = "localhost", cmd: str = "", blocking = True): # runs client
         if len(cmd) == 0:
             cmd = (self.CLIENT_CMD+f"{self.trace_file}")
         cmd += f" -i {server_ip}" # remote server support
         # run client
-        print(f"\t- [Client runner] Running the LC client {cmd} ... ", flush=True, end="")
-        p = subprocess.Popen(
+        print(f"\t-[Client runner] Running the LC client {cmd} ... ", flush=True, end="")
+        self.process = subprocess.Popen(
             cmd.split(" "),
             stdout=subprocess.PIPE,
             stdin=subprocess.PIPE,
             stderr=subprocess.PIPE
         )
-        
         # wait to finish
         print("Done! ", flush=True)
-        print(f"\t- [Client runner] sleeping for {self.wait_for_client_sec} sec.", flush=True)
+        if blocking:
+            print(f"\t-[Client runner] sleeping for {self.wait_for_client_sec} sec.", flush=True)
         
-        time.sleep(self.wait_for_client_sec)
-        print(f"\t- [Client runner] checking if client process is done ... ", flush=True, end="")
-        if p.poll() is None:
-            print(f"No (retrying in 60 sec) ... ", flush=True, end="")
-            time.sleep(self.trace_unit_sec)
-        print(f"Done!", flush=True)
+            time.sleep(self.wait_for_client_sec)
+            print(f"\t-[Client runner] checking if client process is done ... ", flush=True, end="")
+            if self.process.poll() is None:
+                print(f"No (retrying in 60 sec) ... ", flush=True, end="")
+                time.sleep(self.trace_unit_sec)
+            print(f"Done!", flush=True)
+            
+            # check for client
+            if self.process.poll() is None:
+                print(f"\t-[Client runner] ERROR client process not responsding!", flush=True)
+                self.process.kill()
+                return None
+            
+            self.process.wait()
+            out, err = self.process.communicate()
+            # print(out.decode())
+            # print("Client done! ", flush=True)
+            # parse client output and return rps and power
+            return self.parse_client_output(out.decode())
         
-        # check for client
-        if p.poll() is None:
-            print(f"\t- [Client runner] ERROR client process not responsding!", flush=True)
-            p.kill()
+    def get_lc_results(self):
+        if self.process is None:
             return None
+        sleep_sec = 180
+        if self.process.poll() is None:
+            print(f"\t-[Client runner] sleeping for {sleep_sec} sec.", flush=True)
         
-        p.wait()
-        out, err = p.communicate()
-        # print(out.decode())
-        # print("Client done! ", flush=True)
-        # parse client output and return rps and power
+            time.sleep(sleep_sec)
+            print(f"\t-[Client runner] checking if client process is done ... ", flush=True, end="")
+            if self.process.poll() is None:
+                print(f"No (retrying in {sleep_sec} sec) ... ", flush=True, end="")
+                time.sleep(sleep_sec)
+            print(f"Done!", flush=True)
+        
+            # check for client
+            if self.process.poll() is None:
+                print(f"\t-[Client runner] ERROR client process not responsding!", flush=True)
+                self.process.kill()
+                return None
+        
+        self.process.wait()
+        out, err = self.process.communicate()
         return self.parse_client_output(out.decode())
-    
+
     def parse_client_output(self, output: str):
 
         def break_to_key_val(data: str, prefix: str = "p95th"):
@@ -146,7 +171,7 @@ class LCClientRunnerWarpper:
         self.debug = debug
         
         if len(self.trace_file) == 0:
-            print(f"\t- [Client runner] No trace provided, using warmup trace {self.warmup_loads_trace}")
+            print(f"\t-[Client runner] No trace provided, using warmup trace {self.warmup_loads_trace}")
             self.generate_warmpup_trace()
             self.trace_file = self.warmup_loads_trace
         
@@ -154,7 +179,7 @@ class LCClientRunnerWarpper:
         step = math.ceil(self.max_warmup_load_pct/self.num_warmpup_load_steps)
         
         loads = list()
-        print("\t- [Client runner] warmup trace pct:", end="", flush=True)
+        print("\t-[Client runner] warmup trace pct:", end="", flush=True)
         for i in range(self.max_warmup_load_pct, 1, -step):
             loads.append(i)
             print(f"{i},", end="", flush=True)
@@ -169,7 +194,7 @@ class LCClientRunnerWarpper:
     def warmup(self, server_ip: str = "localhost"):
         # generate warmpup trace
         loads, step = self.generate_warmpup_trace()
-        print(f"\t- [Client runner] Warmingup the lc server with: min load {loads[0]}, max load: {loads[-1]}, step {step} for {self.warmup_step_duration_sec} sec each.")
+        print(f"\t-[Client runner] Warmingup the lc server with: min load {loads[0]}, max load: {loads[-1]}, step {step} for {self.warmup_step_duration_sec} sec each.")
         client = LCClientRunner(
             trace_file=self.warmup_loads_trace,
             gpus=self.gpus,
@@ -194,7 +219,7 @@ class LCClientRunnerWarpper:
         res = None
         tries = 0
         while res == None and tries < num_tries:
-            print(f"\t- [Client runner] Running the LC client: try:{tries} gpus:{self.gpus} trace_file:{file_name} trace_unit:{self.trace_unit_sec} sec each load.")
+            print(f"\t-[Client runner] Running the LC client: try:{tries} gpus:{self.gpus} trace_file:{file_name} trace_unit:{self.trace_unit_sec} sec each load.")
             res = client.run_client(server_ip=server_ip)
         return res
 

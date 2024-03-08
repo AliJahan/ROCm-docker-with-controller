@@ -5,7 +5,7 @@ from .lc_runner.lc_client_runner import LCClientRunnerWarpper
 from .lc_runner.lc_client_runner import LCClientRunnerWarpper
 
 class RemoteDockerRunner:
-    SLEEP_AFTER_SEND_MSG_SEC = 5
+    SLEEP_AFTER_SEND_MSG_SEC = 2
     docker_controller_socket = None
     remote_header = "remote_docker_runner"
     dockers_to_cleanup = list()
@@ -16,9 +16,12 @@ class RemoteDockerRunner:
             target_docker_control_port: str,
             remote_workload_control_port: str,
             remote_resource_ctl_port: str,
-            debug = False
+            print_debug_info = True,
+            simulate = False
     ):
-        self.debug = debug
+        
+        self.simulate = simulate
+        self.print_debug_info = print_debug_info
         self.remote_ip = remote_ip
         self.target_ip = target_ip
         self.target_docker_control_port = target_docker_control_port
@@ -27,26 +30,30 @@ class RemoteDockerRunner:
         self.docker_controller_socket = self.setup_socket()
 
     def setup_socket(self):
-        if self.debug:
+        if self.simulate:
             return None
-        self.debug
         self.ctx = zmq.Context.instance()
         publisher = None
         # poller = None
-        print(f"\t- [RemoteDockerRunner]: Connecting to {self.target_ip}:{self.target_docker_control_port}... ", end="")
+        if self.print_debug_info:
+            print(f"\t-[RemoteDockerRunner.setup_socket]: Connecting to {self.target_ip}:{self.target_docker_control_port}... ", end="")
         try:
             publisher = self.ctx.socket(zmq.DEALER)
             publisher.setsockopt_string(zmq.IDENTITY, self.remote_header)
             publisher.connect(f"tcp://{self.target_ip}:{self.target_docker_control_port}")
-            print("Success!")
+            if self.print_debug_info:
+                print("Success!")
             return publisher
         except Exception as e:
             print(f"Failed! error: {e}")
         return None
 
     def send_msg(self, msg):
-        print(f"\t- [RemoteDockerRunner]: Sending message: {msg} ... ", end="", flush=True)
-        if self.debug:
+        if self.print_debug_info:
+            print(f"\t-[RemoteDockerRunner.send_msg]: Sending message: {msg} ... ", end="", flush=True)
+            print(f"Done!", flush=True)
+
+        if self.simulate:
             return True
         rep = False
         try:
@@ -60,7 +67,8 @@ class RemoteDockerRunner:
 
         if rep == True:
             time.sleep(self.SLEEP_AFTER_SEND_MSG_SEC)
-            print(f"Done!") 
+            if self.print_debug_info:
+                print(f"Done!") 
 
         return rep
 
@@ -98,9 +106,11 @@ class RemoteWorkloadRunner:
             lc_workload_name: str = "Inference-Server",
             be_workload_name: str = "miniMDock",
             wait_after_send = True,
-            debug = False
+            print_debug_info = True,
+            simulate = False
     ):
-        self.debug = debug
+        self.simulate = simulate
+        self.print_debug_info = print_debug_info
         self.remote_ip = remote_ip
         self.target_ip = target_ip
         self.be_workload_name = be_workload_name
@@ -110,23 +120,25 @@ class RemoteWorkloadRunner:
         self.publisher_socket = self.setup_socket()
 
     def setup_socket(self):
-        if self.debug:
+        if self.simulate:
             return None
         self.ctx = zmq.Context.instance()
         publisher = None
         # poller = None
-        print(f"\t- [RemoteWorkloadRunner]: Binding to {self.remote_ip}:{self.remote_workload_control_port}... ", end="")
+        if self.print_debug_info:
+            print(f"\t-[RemoteWorkloadRunner]: Binding to {self.remote_ip}:{self.remote_workload_control_port}... ", end="")
         try:
             publisher = self.ctx.socket(zmq.PUB)
             publisher.bind(f"tcp://*:{self.remote_workload_control_port}")
-            print("Success!")
+            if self.print_debug_info:
+                print("Success!")
             return publisher
         except Exception as e:
             print(f"Failed! error: {e}")
         return None
 
     def run_lc_client(self, warmp_first, num_warmpup_load_steps, warmup_step_duration_sec, gpus, max_rps_per_gpu, trace_file, trace_unit_sec, no_run = False):
-        if self.debug:
+        if self.simulate:
             return None
         client = LCClientRunnerWarpper(
             num_warmpup_load_steps=num_warmpup_load_steps,
@@ -145,8 +157,10 @@ class RemoteWorkloadRunner:
         return client.run(server_ip=self.target_ip)
 
     def send_msg(self, channel, msg):
-        print(f"\t- [RemoteWorkloadRunner]: sending message: ({channel}) {msg} ... ", end="", flush=True)
-        if self.debug:
+        if self.print_debug_info:
+            print(f"\t-[RemoteWorkloadRunner]: sending message: ({channel}) {msg} ... ", end="", flush=True)
+        if self.simulate:
+            print(f"Done!", flush=True) 
             return True
         rep = True
         try:
@@ -160,10 +174,11 @@ class RemoteWorkloadRunner:
                 print(f"FAILED! error: ZMQ socket error: {e}", flush=True)
             rep = False
 
-        if rep == True and self.wait_after_send:
-            time.sleep(self.SLEEP_AFTER_SEND_MSG_SEC)
-            print(f"Done!") 
-
+        if rep == True:
+            if self.wait_after_send:
+                time.sleep(self.SLEEP_AFTER_SEND_MSG_SEC)
+            if self.print_debug_info:
+                print(f"Done!", flush=True) 
         return rep
     def get_channel(self, is_be_wl):
         return self.be_workload_name if is_be_wl == True else self.lc_workload_name

@@ -54,7 +54,7 @@ class LCLoadCollector(threading.Thread):
     def run(self):
         with self.lock:
             self.runnig = True
-        print("PowerCollector is running...")
+        print("LC Load Collector is running...")
         while True:
             socks = dict(self.poller.poll(5))
 

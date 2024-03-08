@@ -31,8 +31,12 @@ class PowerModel:
         self.power_models = self.create_power_model()
         # self.lc_trace_powers = self.get_power_ranges_lc_cap()
 
+    def get_lc_load_pct_list(self):
+        return self.lc_load_trace['raw_percent']
+
     def get_power_models(self):
         return self.power_models
+
     def load_power_profiles(self):
         # Obtain all profiled files (CUMasking + PowerCapping)
         lc_powercap_files = list()
@@ -161,7 +165,7 @@ class PowerModel:
             'num_gpus': load_num_gpu_data
         }
     
-    def create_lc_power_model(self, power_profile, plot_save_path: str = "./data"):
+    def create_lc_power_model(self, power_profile, plot_save_path: str):
         power_model = dict()
         for model_type in power_profile: # cu or cap
                 if self.debug:
@@ -191,7 +195,8 @@ class PowerModel:
                         plt.legend(loc='upper right',ncol=4, bbox_to_anchor=(1, 1))
                         plt.savefig(f"{plot_save_path}/lc_load_vs_{model_type}{type_value}.png", tight_layout=True)
         return power_model
-    def create_be_power_model(self, power_profile, plot_save_path: str = "./data"):
+    
+    def create_be_power_model(self, power_profile, plot_save_path: str):
         power_model = {
             'power2cap': dict(),
             'power2cu': dict()
@@ -211,10 +216,10 @@ class PowerModel:
             avg_powers_extended = avg_powers.reshape(avg_powers.shape[0], 1)
             caps = filtered_power.cap.values
             caps_extended = caps.reshape(caps.shape[0], 1)
-            regressor = linear_model.LinearRegression()
-            regressor.fit(avg_powers_extended, caps)
+            # regressor = linear_model.LinearRegression()
+            # regressor.fit(avg_powers_extended, caps)
             power_model['power2cap'][cu] = {
-                'reg_model': regressor.predict,
+                # 'reg_model': regressor.predict,
                 'min_supported': min(avg_powers),
                 'max_supported': max(avg_powers)
             }
@@ -226,7 +231,7 @@ class PowerModel:
                 # info_str = f"qos metric: {self.lc_qos_metric}\nqos threashold:{self.lc_qos_msec} msec\nmax safe load: {max(loads_pct)[0]}\n------\ncoef: {coef}\nintercept: {intercept}"
                 # plt.text(0,160, info_str)
                 plt.scatter(avg_powers, caps,  color='black', label="Power Data")
-                plt.plot(avg_powers, regressor.predict(caps_extended), linewidth=3, label=f"cu={cu}")                        
+                # plt.plot(avg_powers, regressor.predict(caps_extended), linewidth=3, label=f"cu={cu}")                        
                 plt.title(f"Power/Load for cu = {cu}")
                 plt.xlabel("Power")
                 # plt.ylim(0,225)
@@ -251,11 +256,11 @@ class PowerModel:
             cus = filtered_by_cap.cu.values
             cus_extended = cus.reshape(cus.shape[0], 1)
 
-            regressor = neural_network.MLPRegressor(hidden_layer_sizes=(100,100))
+            # regressor = neural_network.MLPRegressor(hidden_layer_sizes=(100,100))
             # regressor = linear_model.LinearRegression()
-            regressor.fit(avg_powers_extended, cus)
+            # regressor.fit(avg_powers_extended, cus)
             power_model['power2cu'][cap] = {
-                'reg_model': regressor.predict,
+                # 'reg_model': regressor.predict,
                 'min_supported': min(avg_powers),
                 'max_supported': max(avg_powers)
             }
@@ -268,7 +273,7 @@ class PowerModel:
                 # plt.text(0,160, info_str)
                 # plt.scatter(cus, avg_powers, color='black', label="Power Data")
                 plt.scatter(avg_powers, cus, color='black', label="Power Data")
-                plt.plot(avg_powers, regressor.predict(cus_extended), linewidth=3, label=f"cap={cap}")                        
+                # plt.plot(avg_powers, regressor.predict(cus_extended), linewidth=3, label=f"cap={cap}")                        
                 plt.title(f"Power/Load for cap = {cap}")
                 plt.xlabel("Power")
                 # plt.ylim(0,225)
@@ -282,8 +287,14 @@ class PowerModel:
     def create_power_model(self, plot_save_path: str = f"{os.path.dirname(os.path.abspath(__file__))}/../data"):
         
         power_model = {
-            'lc': self.create_lc_power_model(self.power_profiles['lc']),
-            'be': self.create_be_power_model(self.power_profiles['be'])
+            'lc': self.create_lc_power_model(
+                    power_profile=self.power_profiles['lc'],
+                    plot_save_path=plot_save_path
+                ),
+            'be': self.create_be_power_model(
+                    power_profile=self.power_profiles['be'], 
+                    plot_save_path=plot_save_path
+                )
         }
                 
         return power_model
@@ -320,17 +331,15 @@ class PowerModel:
         # print(load_trace_powers.describe())
         return load_trace_powers
 
-    def optimized_for_fr(self, elec_cost: int, reg_up: int, reg_down: int, symmetric_provision_range=False, preformance_score_pct=100):
+    def optimized_for_fr(self, elec_cost: int, reg_up: int, reg_down: int, symmetric_provision_range=False, preformance_score_pct=95):
         avg_load = sum(self.lc_load_trace['raw_percent'])/len(self.lc_load_trace['raw_percent'])
         power_ranges = self.get_power_ranges_lc_cap(avg_load)
         # print(power_ranges.describe())
         min_acceptable_power = self.num_system_gpus*power_ranges.lowest_safe_power.mean()
         avg_power = self.num_system_gpus*power_ranges.highest_safe_power.mean()
-        # print(min_acceptable_power)
-        # print(avg_power)
         res = Optimize(
             avg_power=avg_power,
-            min_acceptable_power=min_acceptable_power,
+            min_acceptable_power=avg_power,
             increase_price=reg_down,
             max_power=self.num_system_gpus*self.power_models['be']['power2cap'][60]['max_supported'],
             reduce_price=reg_up,
@@ -360,8 +369,6 @@ class PowerModel:
                 }
             }
         return res
-            
-
 
 
 def test_power_model():

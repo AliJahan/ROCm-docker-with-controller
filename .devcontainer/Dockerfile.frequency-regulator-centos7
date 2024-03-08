@@ -1,0 +1,68 @@
+FROM centos:centos7
+LABEL maintainer=ajaha004@ucr.edu
+
+# RUN sed -i 's/mirrorlist/#mirrorlist/g' /etc/yum.repos.d/CentOS-Linux-* \
+#     && sed -i 's|#baseurl=http://mirror.centos.org|baseurl=http://vault.centos.org|g' /etc/yum.repos.d/CentOS-Linux-*
+RUN yum install -y http://mirror.centos.org/centos/7/extras/x86_64/Packages/centos-release-scl-rh-2-3.el7.centos.noarch.rpm
+RUN yum install -y http://mirror.centos.org/centos/7/extras/x86_64/Packages/centos-release-scl-2-3.el7.centos.noarch.rpm
+RUN yum install -y devtoolset-9-gcc-c++ libjpeg-devel zlib1g-devel
+ENV PATH=/opt/rh/devtoolset-9/root/usr/bin${PATH:+:${PATH}}
+ENV MANPATH=/opt/rh/devtoolset-9/root/usr/share/man:${MANPATH}
+ENV INFOPATH=/opt/rh/devtoolset-9/root/usr/share/info${INFOPATH:+:${INFOPATH}}
+ENV PCP_DIR=/opt/rh/devtoolset-9/root
+# bz847911 workaround:
+# we need to evaluate rpm's installed run-time % { _libdir }, not rpmbuild time
+# or else /etc/ld.so.conf.d files?
+ENV rpmlibdir=/usr/lib64
+ENV LD_LIBRARY_PATH=/opt/rh/devtoolset-9/root$rpmlibdir$rpmlibdir32${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
+ENV LD_LIBRARY_PATH=/opt/rh/devtoolset-9/root$rpmlibdir$rpmlibdir32:/opt/rh/devtoolset-9/root$rpmlibdir/dyninst$rpmlibdir32/dyninst${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}
+ENV PKG_CONFIG_PATH=/opt/rh/devtoolset-9/root/usr/lib64/pkgconfig${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}
+RUN yum install -y glibc-langpack-en cmake python3 python3-devel python3-pip xxd wget make openssl-devel git
+
+# Inference-server dependencies
+# cmake 3.23.5 
+RUN wget https://cmake.org/files/v3.23/cmake-3.23.5.tar.gz \
+    && tar xzf cmake-3.23.5.tar.gz \
+    && cd cmake-3.23.5 \
+    && ./configure --prefix=/opt/cmake --parallel=`nproc` \
+    && make -j \
+    && make install
+
+ENV PATH=/opt/cmake/bin/:$PATH
+
+# libzmq 
+RUN cd /opt \
+    && git clone https://github.com/zeromq/libzmq.git \
+    && cd libzmq \
+    && git checkout v4.3.5 \
+    && mkdir build \
+    && cd build \
+    && cmake .. \
+    && make -j \
+    && make install
+
+# cppzmq
+RUN cd /opt \
+    && git clone https://github.com/zeromq/cppzmq.git \
+    && cd cppzmq \
+    && git checkout v4.10.0 \
+    && mkdir build \
+    && cd build \
+    && cmake .. \
+    && make -j \
+    && make install
+
+COPY ../workloads /workloads
+
+# build inference server
+RUN cd /workloads/Inference-server \
+    && rm -rf build && mkdir build \
+    && cd build \
+    && cmake .. \
+    && make -j
+
+COPY ../scripts/ /frequency_regulator/
+
+RUN pip3 install -r /frequency_regulator/frequency_regulator_power_cap/requirements.txt
+
+ENTRYPOINT python3 /workspace/scripts/frequency_regulator_power_cap/frequency_regulator.py

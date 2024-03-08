@@ -20,9 +20,11 @@ class GPUResourceManagerDistributed:
             remote_control_ip: str = "172.20.0.6",
             remote_control_port: str = "5000",
             wait_after_send = True,
-            debug = False
+            print_debug_info = False,
+            simulate = False
         ):
-        self.debug = debug
+        self.simulate = simulate
+        self.print_debug_info = print_debug_info
         self.wait_after_send = wait_after_send
         self.remote_control_ip = remote_control_ip
         self.remote_control_port = remote_control_port
@@ -59,10 +61,10 @@ class GPUResourceManagerDistributed:
             return True
         
         if gpu not in self.gpus_masks:
-            print(f"\t- [GPUResourceManager]: ERROR requested gpu ({gpu}) is not available!")
+            print(f"\t-[GPUResourceManager]: ERROR requested gpu ({gpu}) is not available!")
             return False
         if len(self.gpus_masks[gpu][GPUWorkloadType.FREE]) < cus:
-            print(f"\t- [GPUResourceManager]: ERROR requested cus ({cus}) is less than the available cus({len(self.gpus_masks[gpu][GPUWorkloadType.FREE])})")
+            print(f"\t-[GPUResourceManager]: ERROR requested cus ({cus}) is less than the available cus({len(self.gpus_masks[gpu][GPUWorkloadType.FREE])})")
             return False
         
         self.gpus_masks[gpu][GPUWorkloadType.FREE] = sorted(self.gpus_masks[gpu][GPUWorkloadType.FREE])
@@ -79,8 +81,8 @@ class GPUResourceManagerDistributed:
         assert len(mask) == 64, f"generated mask: {mask} is longer than 64 bits!"
         mask1 = self.convert_bin2hex_str(mask[:32])
         mask0 = self.convert_bin2hex_str(mask[32:])
-
-        print(f"\t- [GPUResourceManager]: Mask for app:{app_name} generated. (mask0={mask0} mask1={mask1})", flush=True)
+        if self.print_debug_info:
+            print(f"\t-[GPUResourceManager]: Mask for app:{app_name} generated. (mask0={mask0} mask1={mask1})", flush=True)
 
         return self.set_mask(
             app_name=app_name,
@@ -90,22 +92,22 @@ class GPUResourceManagerDistributed:
         )
     def remove_cu(self, app_name: str, gpu: int, cus: int, is_be = False):
         if cus < 0:
-            print(f"\t- [GPUResourceManager]: ERROR requested cus ({cus}) is less than zero")
+            print(f"\t-[GPUResourceManager]: ERROR requested cus ({cus}) is less than zero")
             return False
 
         if cus == 0:
             return True
 
         if gpu not in self.gpus_masks:
-            print(f"\t- [GPUResourceManager]: ERROR requested gpu ({gpu}) is not available!")
+            print(f"\t-[GPUResourceManager]: ERROR requested gpu ({gpu}) is not available!")
             return False
 
         if is_be and len(self.gpus_masks[gpu][GPUWorkloadType.BE]) < cus:
-            print(f"\t- [GPUResourceManager]: ERROR requested cus ({cus}) is less than the available cus to remove ({len(self.gpus_masks[gpu][GPUWorkloadType.BE])})")
+            print(f"\t-[GPUResourceManager]: ERROR requested cus ({cus}) is less than the available cus to remove ({len(self.gpus_masks[gpu][GPUWorkloadType.BE])})")
             return False
 
         if not is_be and len(self.gpus_masks[gpu][GPUWorkloadType.LC]) < cus:
-            print(f"\t- [GPUResourceManager]: ERROR requested cus ({cus}) is less than the available cus to remove ({len(self.gpus_masks[gpu][GPUWorkloadType.LC])})")
+            print(f"\t-[GPUResourceManager]: ERROR requested cus ({cus}) is less than the available cus to remove ({len(self.gpus_masks[gpu][GPUWorkloadType.LC])})")
             return False
 
         mask = ""
@@ -123,8 +125,8 @@ class GPUResourceManagerDistributed:
         assert len(mask) == 64, f"generated mask: {mask} is longer than 64 bits!"
         mask1 = self.convert_bin2hex_str(mask[:32])
         mask0 = self.convert_bin2hex_str(mask[32:])
-
-        print(f"\t- [GPUResourceManager]: Mask for app:{app_name} generated. (mask0={mask0} mask1={mask1})", flush=True)
+        if self.print_debug_info:
+            print(f"\t-[GPUResourceManager]: Mask for app:{app_name} generated. (mask0={mask0} mask1={mask1})", flush=True)
         return self.set_mask(
             app_name=app_name,
             gpu=gpu,
@@ -133,25 +135,30 @@ class GPUResourceManagerDistributed:
         )
     
     def setup_socket(self):
-        if self.debug:
+        if self.simulate:
             return None
 
         self.ctx = zmq.Context.instance()
         publisher = None
         # poller = None
-        print(f"\t- [GPUResourceManager]: Binding to {self.remote_control_ip}:{self.remote_control_port}... ", end="")
+        if self.print_debug_info:
+            print(f"\t-[GPUResourceManager]: Binding to {self.remote_control_ip}:{self.remote_control_port}... ", end="")
         try:
             publisher = self.ctx.socket(zmq.PUB)
             publisher.bind(f"tcp://*:{self.remote_control_port}")
-            print("Success!")
-            return publisher
         except Exception as e:
             print(f"Failed! error: {e}")
-        return None
+
+        if self.print_debug_info:
+            print("Success!")
+        return publisher
 
     def send_msg(self, channel, msg):
-        print(f"\t- [GPUResourceManager]: sending message: ({channel}) {msg} ... ", end="", flush=True)
-        if self.debug:
+        if self.print_debug_info:
+            print(f"\t-[GPUResourceManager]: sending message: ({channel}) {msg} ... ", end="", flush=True)
+        
+        if self.simulate:
+            print(f"Done!") 
             return True
         rep = True
         try:
@@ -163,9 +170,11 @@ class GPUResourceManagerDistributed:
             else:
                 print(f"FAILED! error: ZMQ socket error: {e}", flush=True)
             rep = False
-        if rep == True and self.wait_after_send:
-            time.sleep(self.SLEEP_AFTER_SEND_MSG_SEC)
-            print(f"Done!") 
+        if rep == True:
+            if self.wait_after_send:
+                time.sleep(self.SLEEP_AFTER_SEND_MSG_SEC)
+            if self.print_debug_info:
+                print(f"Done!") 
         return rep
     
     def set_mask(self, app_name, gpu, cumask_full_hex0, cumask_full_hex1):
@@ -185,20 +194,23 @@ class GPUResourceManagerDistributed:
     
     def set_freq(self, app_name: str, gpu: int, freq: int):
         if gpu not in self.gpus_masks:
-            print(f"\t- [GPUResourceManager]: ERROR: Gpu ({gpu}) does not exists", flush=True)
+            print(f"\t-[GPUResourceManager]: ERROR: Gpu ({gpu}) does not exists", flush=True)
             return False
 
         if freq < 5:
-            print(f"\t- [GPUResourceManager]: Warning: Freq provided ({freq}) is not withing range (5,225), setting to 5", flush=True)
+            if self.print_debug_info:
+                print(f"\t-[GPUResourceManager]: Warning: Freq provided ({freq}) is not withing range (5,225), setting to 5", flush=True)
             freq = 5
         
         if freq > 225:
-            print(f"\t- [GPUResourceManager]: Warning: Freq provided ({freq}) is not withing range (5,225), setting to 225", flush=True)
+            if self.print_debug_info:
+                print(f"\t-[GPUResourceManager]: Warning: Freq provided ({freq}) is not withing range (5,225), setting to 225", flush=True)
             freq = 225
 
         # Warning check:
         if len(self.gpus_masks[gpu][GPUWorkloadType.BE]) > 0 and len(self.gpus_masks[gpu][GPUWorkloadType.LC]) > 0:
-            print(f"\t- [GPUResourceManager]: WARNNING: Both BE and LC apps are located in this GPU, setting gpu {gpu} freq to {freq} may impact both apps performance", flush=True)
+            if self.print_debug_info:
+                print(f"\t-[GPUResourceManager]: WARNNING: Both BE and LC apps are located in this GPU, setting gpu {gpu} freq to {freq} may impact both apps performance", flush=True)
         # for cleanup
         if app_name not in self.apps_freq_changed:
             self.apps_freq_changed[app_name] = list()
@@ -210,6 +222,9 @@ class GPUResourceManagerDistributed:
         for app_name in self.apps_freq_changed: # app_name unnecessary since freq is set per gpu
             for gpu in self.apps_freq_changed[app_name]:
                 self.set_freq(app_name=app_name, gpu=gpu, freq=225)
+
+    def __del__(self):
+        self.cleanup()
 
 def test_resrouce_manager():
     mgr = GPUResourceManagerDistributed()

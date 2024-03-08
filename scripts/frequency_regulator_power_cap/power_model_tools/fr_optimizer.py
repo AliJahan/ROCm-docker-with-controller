@@ -41,8 +41,8 @@ def Optimize(
         reduce_price = 6, 
         increase_price = 2, 
         saving_threashold_pct = 20,
-        symmetric_provision_range=False,
-        predicted_perf_score_pct=85
+        symmetric_provision_range = False,
+        predicted_perf_score_pct=90
     ):
     # Decision variables
     avg_power = round(avg_power)

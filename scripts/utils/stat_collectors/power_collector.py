@@ -41,13 +41,13 @@ class PowerCollector(threading.Thread):
             del self.power_socket
         del self.ctx
         self.ctx = None
-        print("\t- [PowerCollector]: sockets closed", flush=True)
+        print("\t-[PowerCollector]: sockets closed", flush=True)
         
 
     def setup_socket(self):
         if self.debug:
             return True
-        print(f"\t- [PowerCollector]: Connecting to power broadcaster {self.power_broadcaster_ip}:{self.power_broadcaster_port} ... ", end="")
+        print(f"\t-[PowerCollector]: Connecting to power broadcaster {self.power_broadcaster_ip}:{self.power_broadcaster_port} ... ", end="")
         self.ctx = zmq.Context.instance()
         publisher = self.ctx.socket(zmq.SUB)
         poller = None
@@ -68,13 +68,13 @@ class PowerCollector(threading.Thread):
             return
         with self.lock:
             self.runnig = True
-        print("\t- [PowerCollector]: PowerCollector is running...")
+        print("\t-[PowerCollector]: PowerCollector is running...")
         while True:
             # time.sleep(0.001)
             with self.lock:
                 if self.runnig == False:
                     break
-            socks = dict(self.poller.poll(5))
+            socks = dict(self.poller.poll(50))
             if self.power_socket in socks and socks[self.power_socket] == zmq.POLLIN:
                 msg = None
                 try:
@@ -96,11 +96,15 @@ class PowerCollector(threading.Thread):
                     if self.queue.empty() == False:
                         self.queue.get()
                     self.queue.put(rcvd_power_data)
-        print("\t- [PowerCollector]: PowerCollector thread is stopped")
+        print("\t-[PowerCollector]: PowerCollector thread is stopped")
             # time.sleep(self.collection_interval_sec)
 
     def get_cur_power(self): # gets the last power published
-        return self.queue.get()
+        while True:
+            with self.lock:
+                if self.queue.empty() == False:
+                    return self.queue.get()
+            time.sleep(0.002)
 
     def get_all_powers(self):
         powers = list()
